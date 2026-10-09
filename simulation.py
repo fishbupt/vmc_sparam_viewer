@@ -10,7 +10,7 @@ import tempfile
 import shutil
 import uuid
 import numpy as np
-from characterization import load_standard, sample_standard, SAMPLING_METHODS
+from characterization import load_standard, sample_standard, SAMPLING_METHODS, INTERPOLATION_COORDINATES
 from parser import Dataset
 from frequency_mapping import output_frequencies, frequency_relation
 
@@ -162,12 +162,13 @@ def simulate(standard_paths, options=SimulationOptions()):
         '说明':'无噪声混频器真值；不是可自行变频的 DummyDUT 模型'},[])
     matrix=np.stack((np.stack((c11,t),axis=-1),np.stack((t,c22),axis=-1)),axis=-2)
     max_sv=float(np.max(np.linalg.svd(matrix,compute_uv=False)))
-    manifest={'version':'1.5.0','options':asdict(o),'z0_ohm':z0,'frequency_conversion':o.frequency_conversion,'if_relation':relation+' (non-inverting)',
+    manifest={'version':'1.5.1','options':asdict(o),'z0_ohm':z0,'frequency_conversion':o.frequency_conversion,'if_relation':relation+' (non-inverting)',
         'phase_reference':'Phases are at RF start; phase slope is -2*pi*(RF-RF_start)*delay',
         'model':'m=D+R*Gamma/(1-S*Gamma); output reflection=C11+C12*C21*Gamma/(1-C22*Gamma)',
         'truth_reference_root_sign':1 if abs(np.sqrt(t[0]*t[0])-t[0]) <= abs(np.sqrt(t[0]*t[0])+t[0]) else -1,
         'reciprocal_assumption':True,'measurement_columns':'Only S11 is meaningful; S21/S12/S22 are zero placeholders',
         'mixer_truth_noise_free':True,'standard_sampling':o.standard_sampling,
+        'interpolation_coordinates':INTERPOLATION_COORDINATES[o.standard_sampling],
         'interpolation_boundary':'not-a-knot' if o.standard_sampling.startswith('cubic_') else None,
         'extrapolation':False,'interpolated_points':counts,
         'noise':{'enabled':o.noise_enabled,'model':'IID circular complex Gaussian added AFTER input error map, independently for each frequency and SOL state',
@@ -207,7 +208,7 @@ def generate_files(standard_paths, output_parent, options=SimulationOptions()):
     try:
         z0=result.manifest['z0_ohm'];f=result.frequency;zeros=np.zeros(len(f),complex)
         common=[f'RF_Hz={f[0]:.17g}..{f[-1]:.17g}; LO_Hz={options.lo_hz:.17g}; {frequency_relation(options.frequency_conversion)}',
-                'StandardSampling='+options.standard_sampling,
+                'StandardSampling='+options.standard_sampling+'; InterpolationCoordinates='+result.manifest['interpolation_coordinates'],
                 f'NoiseEnabled={options.noise_enabled}; ComplexNoiseRMS={result.manifest["noise"]["effective_complex_rms"]:.17g}']
         for i,name in enumerate(MEASUREMENT_NAMES):
             values={'S11':result.measured[:,i],'S21':zeros,'S12':zeros,'S22':zeros}

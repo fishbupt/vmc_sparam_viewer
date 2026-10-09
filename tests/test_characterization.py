@@ -116,7 +116,7 @@ class CharacterizationTests(unittest.TestCase):
             self.assertAlmostEqual(parse_s1p(text).gamma[0],expected)
         s=parse_s1p('# Hz S RI R 50\n0 1 0\n10 0 1\n')
         v,n=sample_standard(s,np.array([0,5,10]),tolerance=.001)
-        np.testing.assert_allclose(v,[1,.5+.5j,1j]);self.assertEqual(n,1)
+        np.testing.assert_allclose(v,[1,np.exp(1j*np.pi/4),1j]);self.assertEqual(n,1)
         with self.assertRaisesRegex(ValueError,'未知'):sample_standard(s,np.array([5]),method='exact')
         with self.assertRaisesRegex(ValueError,'禁止外推'):sample_standard(s,np.array([11]))
         with self.assertRaisesRegex(ValueError,'重复频点'):parse_s1p('# Hz S RI R 50\n1 1 0\n1 0 1\n')

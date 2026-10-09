@@ -61,13 +61,18 @@ class FrequencyConversionTests(unittest.TestCase):
                     self.assertEqual(report['options']['frequency_conversion'], mode)
                     self.assertIn(relation, report['if_relation'])
                     self.assertEqual(result.manifest['frequency_conversion'], mode)
+                    coordinates='linear_magnitude_unwrapped_phase' if method=='linear_ri' else 'real_imaginary'
+                    self.assertEqual(report['interpolation_coordinates'],coordinates)
+                    self.assertEqual(result.manifest['interpolation_coordinates'],coordinates)
                     rows = list(csv.DictReader((saved.directory/'simulation_truth.csv').read_text(encoding='utf-8-sig').splitlines()))
                     np.testing.assert_array_equal([float(row['IF_Hz']) for row in rows], expected_if)
                     for path in [*saved.measurement_paths, saved.mixer_path]:
                         self.assertIn(relation, path.read_text())
+                        self.assertIn('InterpolationCoordinates='+coordinates,path.read_text())
                     output = Path(temp)/'extracted.s2p'
                     export_s2p(result, output)
                     self.assertIn(relation, output.read_text())
+                    self.assertIn('InterpolationCoordinates='+coordinates,output.read_text())
                     for name in sim.truth.s:
                         np.testing.assert_array_equal(load_file(output).s[name], result.dataset.s[name])
                     output = Path(temp)/'record.zip'

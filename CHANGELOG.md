@@ -1,3 +1,11 @@
+# v1.5.1
+
+- 线性标准插值改为线性幅度 + 解缠绕相位分别插值，复数结果为 mag*exp(j*phase)，相位解缠绕采用 np.unwrap，单位弧度；不是 dB 插值。
+- 历史 API / QSettings 键 linear_ri 保持兼容，但其数值行为改为幅相线性；GUI 文案与提示同步。三次样条实虚部插值不变，仍只有两种选项。
+- 精确节点原值优先、恒零 LOAD、禁止外推不变；非恒零标准含零幅度且需要线性插值时拒绝，避免虚构相位。
+- 生成报告 / 表征报告 / S2P 注释记录实际 interpolation_coordinates，区分历史 RI 线性结果。
+- 更新 README 和 AGENTS，新增 v1.5.1 验证记录；44 项数值回归及 Qt offscreen 检查通过。
+
 # v1.5.0
 
 - 新增上下变频选择：down → IF=RF−LO；up → IF=RF+LO，默认 down。两者非反转；不将 LO−RF 分支自动取绝对值。

@@ -22,7 +22,13 @@ LABELS = ('输入端 Open', '输入端 Short', '输入端 Load',
 
 SAMPLING_METHODS = {
     'cubic_ri': '三次样条插值（实部 / 虚部）',
-    'linear_ri': '线性插值（实部 / 虚部）',
+    'linear_ri': '线性插值（幅度 / 解缠绕相位）',
+}
+# Keep the historical linear_ri API / QSettings key, but record its actual
+# coordinates explicitly: v1.5.1 changes linear interpolation to polar form.
+INTERPOLATION_COORDINATES = {
+    'linear_ri': 'linear_magnitude_unwrapped_phase',
+    'cubic_ri': 'real_imaginary',
 }
 
 @dataclass
@@ -113,8 +119,9 @@ def load_standard(path):
 def sample_standard(std, target, method='linear_ri', tolerance=0.001):
     """Preserve exact nodes; interpolate inside the band, never extrapolate.
 
-    Both methods interpolate real and imaginary parts independently.
-    CubicSpline uses not-a-knot boundary conditions; a zero Load stays zero.
+    Linear: interpolate linear magnitude and unwrapped phase (radians).
+    Cubic: interpolate real/imaginary parts with not-a-knot boundaries.
+    A zero Load stays zero; mixed zero/nonzero phase interpolation is rejected.
     """
     target = np.asarray(target, dtype=float)
     if target.ndim != 1 or not np.all(np.isfinite(target)):
@@ -144,8 +151,13 @@ def sample_standard(std, target, method='linear_ri', tolerance=0.001):
             bc_type='not-a-knot', extrapolate=False)(x) + 1j*CubicSpline(
             std.frequency, std.gamma.imag, bc_type='not-a-knot', extrapolate=False)(x)
     else:
-        result[missing] = np.interp(x, std.frequency, std.gamma.real) + 1j*np.interp(
-            x, std.frequency, std.gamma.imag)
+        magnitude = np.abs(std.gamma)
+        if np.any(magnitude == 0):
+            raise ValueError(f'{std.name}: 非恒零标准含零幅度，无法定义相位插值；请使用实虚部三次样条或提供有效标准定义。')
+        phase = np.unwrap(np.angle(std.gamma))
+        interpolated_magnitude = np.interp(x, std.frequency, magnitude)
+        interpolated_phase = np.interp(x, std.frequency, phase)
+        result[missing] = interpolated_magnitude * np.exp(1j*interpolated_phase)
     if not np.all(np.isfinite(result)):
         raise ValueError(f'{std.name}: 标准插值产生非有限值。')
     return result, int(np.count_nonzero(missing))
@@ -268,10 +280,11 @@ def characterize(measurement_paths, standard_paths, options=Options()):
     diagnostics = {'SOL1_condition': cond1, 'SOL2_condition': cond2,
                    'Direct_fit_condition': direct_cond, 'SOL1_residual': residual1,
                    'SOL2_residual': residual2, 'Two_path_complex_difference': cross_error}
-    manifest = {'algorithm': 'SOL Mobius composition / reciprocal converter', 'version': '1.5.0',
+    manifest = {'algorithm': 'SOL Mobius composition / reciprocal converter', 'version': '1.5.1',
                 'lo_hz': options.lo_hz, 'frequency_conversion': options.frequency_conversion,
                 'if_relation': frequency_relation(options.frequency_conversion)+' (non-inverting)',
                 'second_round': options.second_round, 'standard_sampling': options.standard_sampling,
+                'interpolation_coordinates': INTERPOLATION_COORDINATES[options.standard_sampling],
                 'standard_kit': 'shared_open_short_load' if shared_kit else 'per_round_legacy',
                 'interpolation_boundary': 'not-a-knot' if options.standard_sampling.startswith('cubic_') else None,
                 'extrapolation': False,
@@ -305,6 +318,7 @@ def s2p_text(result):
              f'! Stimulus=RF; {result.manifest["if_relation"]}; reciprocal S21=S12',
              f'! LO_Hz={result.manifest["lo_hz"]:.17g}',
              f'! SecondRound={result.manifest["second_round"]}; StandardSampling={result.manifest["standard_sampling"]}',
+             f'! InterpolationCoordinates={result.manifest["interpolation_coordinates"]}',
              f'! SharedKit={result.manifest["standard_kit"]}; CubicBoundary={result.manifest["interpolation_boundary"]}; Extrapolation=False',
              f'! GlobalRootSign={result.manifest["root_sign"]}; absolute sign not identified by SOL reflection',
              f'# Hz S RI R {result.manifest["z0_ohm"]:.17g}']

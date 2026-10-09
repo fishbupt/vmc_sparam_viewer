@@ -79,6 +79,8 @@ with tempfile.TemporaryDirectory() as tmp:
  dialog.grab().save(tmp+'/gui_check.png')
  again=SimulationDialog(main)
  assert again.conversion.currentData()=='up' and again.sampling.count()==2
+ assert '解缠绕相位' in again.sampling.itemText(again.sampling.findData('linear_ri'))
+ assert '解缠绕相位' in captured[-1].sampling.itemText(captured[-1].sampling.findData('linear_ri'))
  assert again.noise.isChecked() and again.parameters['noise_floor_db'][0].value()==-70
  again.close();dialog.close();main.close()
  print('GUI: generation, preview, truth delivery, transfer to characterization, noise, settings and invalidation OK')

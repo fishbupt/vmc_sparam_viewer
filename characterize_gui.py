@@ -74,7 +74,7 @@ class CharacterizeDialog(QDialog):
         saved_sampling = self.settings.value('standard_sampling', 'cubic_ri')
         if saved_sampling not in SAMPLING_METHODS: saved_sampling = 'cubic_ri'
         self.sampling.setCurrentIndex(max(0, self.sampling.findData(saved_sampling)))
-        self.sampling.setToolTip('实部 / 虚部分别插值；精确节点优先，禁止外推；三次样条采用 not-a-knot 边界。')
+        self.sampling.setToolTip('线性：幅度和解缠绕相位分别插值；三次样条：实部 / 虚部分别插值，not-a-knot 边界。精确节点优先，禁止外推。')
         options.addWidget(self.sampling)
         options.addWidget(QLabel('频率容差 (Hz)'))
         self.tol = QDoubleSpinBox(); self.tol.setDecimals(6); self.tol.setRange(0, 1e6); self.tol.setValue(.001)
