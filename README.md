@@ -1,32 +1,32 @@
-# VMC S-Parameter Viewer · v1.5.1
+# VMC S-Parameter Viewer · v1.5.2
 
 用于查看 S2P / Keysight Converter Sweep Data S2PX，并从两轮 SOL 生成校准混频器表征。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。
 
-## v1.5.1 更新：线性插值改为幅度 / 解缠绕相位
+## v1.5.2 更新：两种插值均采用幅度 / 解缠绕相位
 
-线性模式改为对**线性幅度（不是 dB）**和**解缠绕后的相位（弧度）**分别插值：
+线性及三次样条均对**线性幅度（不是 dB）**和**解缠绕后的相位（弧度）**分别插值，然后重构复数。样条核心：
 
 ```python
 magnitude = np.abs(std.gamma)
 phase = np.unwrap(np.angle(std.gamma))
-gamma_interp = np.interp(x, std.frequency, magnitude) * np.exp(
-    1j * np.interp(x, std.frequency, phase)
-)
+mag_interp = CubicSpline(std.frequency, magnitude,
+    bc_type='not-a-knot', extrapolate=False)(x)
+phase_interp = CubicSpline(std.frequency, phase,
+    bc_type='not-a-knot', extrapolate=False)(x)
+gamma_interp = mag_interp * np.exp(1j * phase_interp)
 ```
 
-两种 GUI 选项仍为线性和三次样条。三次样条继续采用实部 / 虚部分别插值。
+为兼容已有调用和 QSettings，保留历史 API 键 `linear_ri` / `cubic_ri`，**它们现在分别代表幅相线性 / 幅相三次样条，不再代表实虚部插值**。线性从 v1.5.1 改变，样条从 v1.5.2 改变。生成和表征均使用同一求值函数；JSON / S2P 注释的实际坐标分别记录为 `linear_magnitude_unwrapped_phase` 和 `cubic_magnitude_unwrapped_phase`，同时记录版本，避免与历史结果混淆。
 
-为兼容已有调用和 QSettings，线性模式的历史 API 键仍为 `linear_ri`，**从 v1.5.1 起该键实际表示幅度 / 解缠绕相位线性插值，不再表示 RI 线性插值**。生成和表征均调用同一个求值函数；JSON 及 S2P 注释新增 `interpolation_coordinates=linear_magnitude_unwrapped_phase`（三次样条为 `real_imaginary`），并记录版本，避免历史结果混淆。
+精确节点优先、禁止外推、not-a-knot 边界不变。恒零 LOAD 保持零；非恒零标准含零幅度且需要插值时，两种方式都明确报错，因为相位无法定义；全部命中精确节点则返回原始值。样条产生负幅度时明确拒绝，不钳位、不取绝对值；可改用幅相线性或提供更合适的标准定义。解缠绕使用 NumPy 默认规则，不能恢复采样不足造成的真实相位混叠。
 
-精确节点优先、禁止外推不变。恒零 LOAD 保持零；非恒零标准含零幅度且需要线性插值时明确报错，因为其相位无法定义，可选择实虚部三次样条或提供有效标准定义。若请求均命中精确节点，则直接返回原始值。解缠绕使用 NumPy 默认规则，不能恢复采样不足造成的真实相位混叠。
-
-44 项数值测试及 Qt offscreen 联动检查通过，见 `docs/validation_v1.5.1.md`。历史记录 `docs/validation_v1.5.0.md` 对应旧线性 RI 行为。
+47 项数值测试通过，当前验证见 `docs/validation_v1.5.2.md`。v1.5.0 / v1.5.1 的验证记录保留，对应各自当时的求值行为。
 
 ## v1.5 更新
 
 - 生成窗口和表征窗口新增 **IF 相对 RF 的变频方向**：下变频 `IF=RF−LO`，上变频 `IF=RF+LO`，默认下变频。
 - API 在 `SimulationOptions` / `Options` 中新增 `frequency_conversion='down' / 'up'`，文件注释、JSON、真值 CSV 和导出频率轴同步记录。
-- 标准件插值只保留 **线性插值** 与 **三次样条插值**。当前线性为幅度 / 解缠绕相位，三次样条为实部 / 虚部。旧独立幅相、dB 和 exact API 键不作为额外选项；旧 GUI 保存的已删除键回退为 cubic_ri。
+- 标准件插值只保留 **线性插值** 与 **三次样条插值**。当前两者均为幅度 / 解缠绕相位。旧独立幅相、dB 和 exact API 键不作为额外选项；旧 GUI 保存的已删除键回退为 cubic_ri。
 - 自动载入表征窗口时同步变频方向；修改方向后旧结果失效。演示输入恢复下变频。
 - 新增 AGENTS.md 说明架构、数学约束、验证命令和接续研发要求。
 
@@ -132,7 +132,7 @@ print(saved.directory)
 
 新增 `simulation.py`（模型与文件层）、`simulate_gui.py`（配置/后台任务/预览），原查看、表征与比较功能保留。参数及最近标准/输出目录通过 QSettings 保存。
 
-本版 44 项数值回归通过：包括上下变频、两种插值闭环、相位跨 ±180° / 多圈解缠绕、线性幅度规则、精确节点原值保持、零幅度边界、导出实际插值坐标记录、解析 / 比较 / Keysight 下变频回归。Qt offscreen 联动检查通过。详见 `docs/validation_v1.5.1.md`；未在 Windows/PNA 现场运行，上变频 Keysight 对照待验证。
+本版 47 项数值回归通过：包括上下变频、两种插值闭环、相位跨 ±180° / 多圈解缠绕、线性幅度规则、三次样条幅相多项式解析值 / 多圈相位 / 负幅度拒绝、精确节点原值保持、零幅度边界、导出实际插值坐标记录、解析 / 比较 / Keysight 下变频回归。Qt offscreen 联动检查通过。详见 `docs/validation_v1.5.2.md`；未在 Windows/PNA 现场运行，上变频 Keysight 对照待验证。
 
 ### 操作顺序
 
@@ -146,14 +146,14 @@ print(saved.directory)
 
 | 界面选项 | API 名称 | 行为 |
 |---|---|---|
-| 实虚部三次样条（推荐） | `cubic_ri` | 实部、虚部各自三次样条 |
+| 幅度 / 解缠绕相位三次样条 | `cubic_ri`（历史兼容键） | 线性幅度、解缠绕后的相位各自三次样条 |
 | 幅度 / 解缠绕相位线性插值 | `linear_ri`（历史兼容键） | 线性幅度、解缠绕后的相位各自线性插值 |
 
-所有方式优先使用容差内唯一命中的原定义值，默认容差 0.001 Hz，均禁止外推。三次样条用 SciPy CubicSpline 的 not-a-knot 边界；完整定义频带的边界会影响样条结果，建议使用原始完整标准文件。恒零 Load 保持为零；非恒零标准含零幅度且需要线性插值时拒绝，可使用实虚部三次样条。精确节点优先属于两种插值的共同规则，不是独立的“仅精确频点”选项。
+所有方式优先使用容差内唯一命中的原定义值，默认容差 0.001 Hz，均禁止外推。三次样条用 SciPy CubicSpline 的 not-a-knot 边界；完整定义频带的边界会影响样条结果，建议使用原始完整标准文件。恒零 Load 保持为零；非恒零标准含零幅度且需要插值时，两种方式都拒绝；样条产生负幅度时拒绝，可改用幅相线性或提供更合适的标准定义。精确节点优先属于两种插值的共同规则，不是独立的“仅精确频点”选项。
 
 测量数据本身不插值。六个测量须有同一严格递增网格；测量和标准参考阻抗须一致，不自动重归一化。拒绝重复/歧义标准节点、缺频段、退化标准及病态求解。
 
-**GUI 首次默认 cubic_ri；纯数值 API 的 Options 默认仍为 linear_ri（现为幅相线性），保留调用键兼容，但线性数值行为已改变。**调用 API 时请显式指定所需模式。插值推荐基于本次仿真对比，不意味着已经确认 Keysight 的内部算法。
+**GUI 首次默认 cubic_ri；纯数值 API 的 Options 默认仍为 linear_ri（现为幅相线性），保留调用键兼容，但两种插值的数值行为均已改变。**调用 API 时请显式指定所需模式。插值推荐基于本次仿真对比，不意味着已经确认 Keysight 的内部算法。
 
 ### 算法与边界
 
@@ -192,7 +192,7 @@ export_bundle(result, 'my_mixer_validation.zip')
 - `examples/characterization_demo`：六个合成测量＋三个明确标为理想演示的标准定义，覆盖 RF/IF；载入演示按钮可直接计算。不是用户物理校准件。
 - `examples/keysight_validation`：本次会话的六个仿真文件、三个标准定义和当前 Keysight 表征。Short 是 5–20 GHz 验证频带摘录；来源与限制写在目录 README 和输入注释中。实际工作建议使用完整原始标准文件。
 - 本次 Keysight 数据全 201 点使用 cubic_ri 的最大复数差约 1.87×10⁻⁷；不是仪器测量准确度规格，剩余残差和 Keysight 内部求值方式尚待核实。
-- 当前数值和界面验证见 `docs/validation_v1.5.1.md`；旧版本记录保留。
+- 当前数值和界面验证见 `docs/validation_v1.5.2.md`；旧版本记录保留。
 
 ## Windows 快速启动
 

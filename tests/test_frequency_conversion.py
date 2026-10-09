@@ -61,7 +61,7 @@ class FrequencyConversionTests(unittest.TestCase):
                     self.assertEqual(report['options']['frequency_conversion'], mode)
                     self.assertIn(relation, report['if_relation'])
                     self.assertEqual(result.manifest['frequency_conversion'], mode)
-                    coordinates='linear_magnitude_unwrapped_phase' if method=='linear_ri' else 'real_imaginary'
+                    coordinates='linear_magnitude_unwrapped_phase' if method=='linear_ri' else 'cubic_magnitude_unwrapped_phase'
                     self.assertEqual(report['interpolation_coordinates'],coordinates)
                     self.assertEqual(result.manifest['interpolation_coordinates'],coordinates)
                     rows = list(csv.DictReader((saved.directory/'simulation_truth.csv').read_text(encoding='utf-8-sig').splitlines()))

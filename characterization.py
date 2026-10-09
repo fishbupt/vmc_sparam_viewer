@@ -21,14 +21,14 @@ LABELS = ('输入端 Open', '输入端 Short', '输入端 Load',
           '混频器输出端 Open', '混频器输出端 Short', '混频器输出端 Load')
 
 SAMPLING_METHODS = {
-    'cubic_ri': '三次样条插值（实部 / 虚部）',
+    'cubic_ri': '三次样条插值（幅度 / 解缠绕相位）',
     'linear_ri': '线性插值（幅度 / 解缠绕相位）',
 }
-# Keep the historical linear_ri API / QSettings key, but record its actual
-# coordinates explicitly: v1.5.1 changes linear interpolation to polar form.
+# Keep historical API / QSettings keys, recording their actual coordinates.
+# v1.5.1 changes linear and v1.5.2 changes cubic interpolation to polar form.
 INTERPOLATION_COORDINATES = {
     'linear_ri': 'linear_magnitude_unwrapped_phase',
-    'cubic_ri': 'real_imaginary',
+    'cubic_ri': 'cubic_magnitude_unwrapped_phase',
 }
 
 @dataclass
@@ -120,7 +120,8 @@ def sample_standard(std, target, method='linear_ri', tolerance=0.001):
     """Preserve exact nodes; interpolate inside the band, never extrapolate.
 
     Linear: interpolate linear magnitude and unwrapped phase (radians).
-    Cubic: interpolate real/imaginary parts with not-a-knot boundaries.
+    Cubic: interpolate linear magnitude and unwrapped phase with not-a-knot
+    boundaries. Reject negative interpolated magnitudes rather than clamping.
     A zero Load stays zero; mixed zero/nonzero phase interpolation is rejected.
     """
     target = np.asarray(target, dtype=float)
@@ -145,18 +146,22 @@ def sample_standard(std, target, method='linear_ri', tolerance=0.001):
     x = target[missing]
     if np.all(std.gamma == 0):
         result[missing] = 0
-    elif method == 'cubic_ri':
-        from scipy.interpolate import CubicSpline
-        result[missing] = CubicSpline(std.frequency, std.gamma.real,
-            bc_type='not-a-knot', extrapolate=False)(x) + 1j*CubicSpline(
-            std.frequency, std.gamma.imag, bc_type='not-a-knot', extrapolate=False)(x)
     else:
         magnitude = np.abs(std.gamma)
         if np.any(magnitude == 0):
-            raise ValueError(f'{std.name}: 非恒零标准含零幅度，无法定义相位插值；请使用实虚部三次样条或提供有效标准定义。')
+            raise ValueError(f'{std.name}: 非恒零标准含零幅度，无法定义相位插值；请提供有效标准定义。')
         phase = np.unwrap(np.angle(std.gamma))
-        interpolated_magnitude = np.interp(x, std.frequency, magnitude)
-        interpolated_phase = np.interp(x, std.frequency, phase)
+        if method == 'cubic_ri':
+            from scipy.interpolate import CubicSpline
+            interpolated_magnitude = CubicSpline(std.frequency, magnitude,
+                bc_type='not-a-knot', extrapolate=False)(x)
+            interpolated_phase = CubicSpline(std.frequency, phase,
+                bc_type='not-a-knot', extrapolate=False)(x)
+            if np.any(interpolated_magnitude < 0):
+                raise ValueError(f'{std.name}: 三次样条幅度插值产生负值；请使用幅相线性插值或提供更合适的标准定义。')
+        else:
+            interpolated_magnitude = np.interp(x, std.frequency, magnitude)
+            interpolated_phase = np.interp(x, std.frequency, phase)
         result[missing] = interpolated_magnitude * np.exp(1j*interpolated_phase)
     if not np.all(np.isfinite(result)):
         raise ValueError(f'{std.name}: 标准插值产生非有限值。')
@@ -280,7 +285,7 @@ def characterize(measurement_paths, standard_paths, options=Options()):
     diagnostics = {'SOL1_condition': cond1, 'SOL2_condition': cond2,
                    'Direct_fit_condition': direct_cond, 'SOL1_residual': residual1,
                    'SOL2_residual': residual2, 'Two_path_complex_difference': cross_error}
-    manifest = {'algorithm': 'SOL Mobius composition / reciprocal converter', 'version': '1.5.1',
+    manifest = {'algorithm': 'SOL Mobius composition / reciprocal converter', 'version': '1.5.2',
                 'lo_hz': options.lo_hz, 'frequency_conversion': options.frequency_conversion,
                 'if_relation': frequency_relation(options.frequency_conversion)+' (non-inverting)',
                 'second_round': options.second_round, 'standard_sampling': options.standard_sampling,

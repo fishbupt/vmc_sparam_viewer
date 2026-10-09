@@ -23,12 +23,13 @@ class SharedKitSamplingTests(unittest.TestCase):
                 self.assertEqual(result.manifest['inputs'][0]['standard_sha256'],result.manifest['inputs'][3]['standard_sha256'])
                 np.testing.assert_array_equal(result.dataset.axes['OutputFreq'],result.dataset.axes['InputFreq']-5e9)
 
-    def test_cubic_ri_recovers_polynomial_preserves_exact_nodes(self):
-        f=np.array([0.,1.,2.,3.,4.]);g=(.1+.01*f**3)+1j*(.2-.02*f**2)
+    def test_cubic_recovers_magnitude_phase_polynomials_preserves_exact_nodes(self):
+        f=np.array([0.,1.,2.,3.,4.])
+        g=(.5+.01*f**3)*np.exp(1j*np.deg2rad(170+50*f+3*f**2))
         std=Standard('polynomial',f,g,50)
         target=np.array([0, .5, 2+1e-5, 3.5, 4])
         actual,count=sample_standard(std,target,'cubic_ri',tolerance=1e-4)
-        expected=(.1+.01*target**3)+1j*(.2-.02*target**2)
+        expected=(.5+.01*target**3)*np.exp(1j*np.deg2rad(170+50*target+3*target**2))
         expected[2]=g[2]
         np.testing.assert_allclose(actual,expected,atol=1e-14)
         self.assertEqual(count,2)
@@ -54,13 +55,37 @@ class SharedKitSamplingTests(unittest.TestCase):
             std=Standard('mixed',f,np.array([1,0,1j,-1],complex),50)
             actual,count=sample_standard(std,np.array([1.]),method)
             self.assertEqual(actual[0],0j);self.assertEqual(count,0)
-            if method=='linear_ri':
-                with self.assertRaisesRegex(ValueError,'零幅度'):
-                    sample_standard(std,np.array([.5,1.,2.5]),method)
-            else:
-                actual,count=sample_standard(std,np.array([.5,1.,2.5]),method)
-                self.assertTrue(np.all(np.isfinite(actual)))
-                self.assertEqual(actual[1],0j);self.assertEqual(count,2)
+            with self.assertRaisesRegex(ValueError,'零幅度'):
+                sample_standard(std,np.array([.5,1.,2.5]),method)
+
+    def test_cubic_unwraps_multiple_phase_turns_in_both_directions(self):
+        f=np.arange(5.)
+        target=np.array([3.5,.5,2.5,1.5])
+        for slope in (90.,-90.):
+            with self.subTest(slope=slope):
+                g=(.3+.05*f)*np.exp(1j*np.deg2rad(170+slope*f))
+                std=Standard('cubic_turns',f,g,50)
+                actual,count=sample_standard(std,target,'cubic_ri')
+                expected=(.3+.05*target)*np.exp(1j*np.deg2rad(170+slope*target))
+                np.testing.assert_allclose(actual,expected,atol=1e-14)
+                self.assertEqual(count,4)
+
+    def test_cubic_negative_magnitude_is_rejected_not_clamped(self):
+        std=Standard('overshoot',np.arange(4.),np.array([.01,.01,1.,1.],complex),50)
+        with self.assertRaisesRegex(ValueError,'负值'):
+            sample_standard(std,np.array([.5]),'cubic_ri')
+        actual,count=sample_standard(std,std.frequency,'cubic_ri')
+        np.testing.assert_array_equal(actual,std.gamma)
+        self.assertEqual(count,0)
+        linear,_=sample_standard(std,np.array([.5]),'linear_ri')
+        np.testing.assert_allclose(linear,[.01])
+
+    def test_two_node_cubic_uses_linear_magnitude_and_unwrapped_phase(self):
+        std=Standard('two_nodes',np.array([0.,10.]),
+            np.array([.2*np.exp(1j*np.deg2rad(170)),.8*np.exp(1j*np.deg2rad(-170))]),50)
+        actual,count=sample_standard(std,np.array([5.]),'cubic_ri')
+        np.testing.assert_allclose(actual,[-.5+0j],atol=1e-14)
+        self.assertEqual(count,1)
 
     def test_linear_magnitude_and_phase_unwrap_across_multiple_turns(self):
         f=np.arange(5.)
