@@ -1,0 +1,9 @@
+!CSV A.01.00
+!Keysight Technologies,N5247B,SM91233779,A.20.20.05
+!Date: Thursday, October, 08, 2026 11:55:54
+!Source: Converter Sweep Data
+!Security: Off
+!Mixer Info: 1,1,1,1,1,1,1,1
+!Data Column Index: : 7
+SegIndex,InputFreq,OutputFreq,LO1Freq,InputPower,LO1Power,S11 Mag (dB),S11 Phase (Deg),S21 Mag (dB),S21 Phase (Deg),S12 Mag (dB),S12 Phase (Deg),S22 Mag (dB),S22 Phase (Deg)
+0,10000000000.000000,5000000000.000000,5000000000.000000,-15.000000,-15.000000,0.612189,67.736345,-0.331859,6.674462,-0.331859,6.674462,2.011589,-71.175141

@@ -1,0 +1,37 @@
+!Keysight Technologies,N5247B,SM91233779,A.20.20.05
+!Mixer S2P File: Mixer Characterization
+!Calibration State: On
+!Example: user-provided numeric rows; XML reduced to relevant settings.
+!# Begin Mixer Setup
+!<MixerConfiguration>
+! <MixerVersion value="1"/>
+! <BaseSettings>
+!  <SegmentSweepMode value="false"/>
+!  <InputStartPower value="-15.000000"/>
+!  <LO1StartPower value="-10.000000"/>
+!  <XAxisRange value="3"/>
+! </BaseSettings>
+! <MixerSegment name="NonSegmentSweepFrequencies">
+!  <InputPower value="-15.000000"/>
+!  <OutputPower value="-15.000000"/>
+!  <LO1Power value="-15.000000"/>
+!  <NumberOfPoints value="21"/>
+!  <IFBandwidth value="10000.000000"/>
+!  <SingleStage value="true"/>
+!  <InputRangeMode value="Swept"/>
+!  <InputStartFreq value="10000000000.000000"/>
+!  <InputStopFreq value="20000000000.000000"/>
+!  <Output1RangeMode value="Swept"/>
+!  <Output1StartFreq value="5000000000.000000"/>
+!  <Output1StopFreq value="15000000000.000000"/>
+!  <LO1RangeMode value="Fixed"/>
+!  <LO1FixedFreq value="5000000000.000000"/>
+!  <LO1MixingMode value="Low"/>
+! </MixerSegment>
+! <SegmentList><MixerSegment name="0"><NumberOfPoints value="21"/><InputStartFreq value="10000000"/></MixerSegment></SegmentList>
+!</MixerConfiguration>
+!# End Mixer Setup
+!Parameters: Stimulus Freq, S11, S21, S12, S22
+# Hz S DB R 50
+1e+10  0.6121889914  67.73634521  -0.3318583586  6.674462138  -0.3318583586  6.674462138  2.011588753  -71.17514055
+1.005e+10  -10.40661259  100.5419077  -1.268959209  -51.58570039  -1.268959209  -51.58570039  6.653944653  -91.70448304

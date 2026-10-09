@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.idea/
+.vscode/
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+vmc_sim_*/
+.vmc_staging_*/
+local_data/
+*.log

@@ -1,0 +1,275 @@
+# VMC S-Parameter Viewer · v1.5.0
+
+用于查看 S2P / Keysight Converter Sweep Data S2PX，并从两轮 SOL 生成校准混频器表征。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。
+
+## v1.5 更新
+
+- 生成窗口和表征窗口新增 **IF 相对 RF 的变频方向**：下变频 `IF=RF−LO`，上变频 `IF=RF+LO`，默认下变频。
+- API 在 `SimulationOptions` / `Options` 中新增 `frequency_conversion='down' / 'up'`，文件注释、JSON、真值 CSV 和导出频率轴同步记录。
+- 标准件插值只保留实部 / 虚部分别 **线性插值** 与 **三次样条插值**。旧幅相、dB 和 exact API 选项已删除，调用会明确报错；旧 GUI 保存的已删除选项回退为 cubic_ri。
+- 自动载入表征窗口时同步变频方向；修改方向后旧结果失效。演示输入恢复下变频。
+- 新增 AGENTS.md 说明架构、数学约束、验证命令和接续研发要求。
+
+## 生成校准套对应的 SOL 仿真数据
+
+主界面新增 **生成 SOL 仿真文件 / Mixer 真值**。选择实际 OPEN、SHORT、LOAD 三个 S1P，设置参数并选择输出父目录，生成：
+
+```text
+01_Input_SOL_Open.s2p
+01_Input_SOL_Short.s2p
+01_Input_SOL_Load.s2p
+02_Mixer_SOL_Open.s2p
+02_Mixer_SOL_Short.s2p
+02_Mixer_SOL_Load.s2p
+Mixer.s2p
+```
+
+附带 `Standard_Open.s1p` / `Standard_Short.s1p` / `Standard_Load.s1p` 原始字节副本、`simulation_report.json` 和 `simulation_truth.csv`。每次生成使用独立 `vmc_sim_时间_标识` 子目录，不覆盖已有结果；写入失败清理本次临时目录。所有 S2P 使用 Hz / S / RI、17 位有效数字和校准套实际参考阻抗。
+
+### 可配置参数和默认值
+
+| 参数 | 默认值 | 含义 |
+|---|---|---|
+| RF 起点 / 终点 / 点数 | 10 / 20 GHz，201 点 | 包含端点的线性扫频 |
+| LO | 5 GHz | 正的固定本振频率 |
+| IF 相对 RF 的方向 | down（下变频） | down：IF=RF−LO，所有 RF>LO；up：IF=RF+LO，允许 LO>RF |
+| 标准件求值 | cubic_ri | 两种 RI 插值，与表征模块一致，禁止外推 |
+| Mixer S11 | −18 dB、−20°、20 ps | 输入反射幅度、起点相位和时延 |
+| Mixer S22 | −20 dB、30°、15 ps | 输出反射幅度、起点相位和时延 |
+| Mixer S21=S12 | −6 dB、−30°、80 ps | 互易转换幅度、起点相位和时延 |
+| EDF | −35 dB、30°、5 ps | 方向性误差复响应 |
+| ESF | −25 dB、−20°、10 ps | 源匹配误差复响应 |
+| ERF | −1 dB、15°、40 ps | 反射跟踪误差复响应，不是单程误差盒 S21 |
+| 噪声 | 默认关闭，底值 −90 dB | 加在六路最终测量 S11 上 |
+| 随机种子 / 等效平均次数 | 20261009 / 1 | PCG64 可复现噪声；平均后 RMS 按 1/√N 缩放 |
+
+每个复响应的幅度为常数；相位按 `Z(f)=10^(A_dB/20)*exp(j*(phi_start−2*pi*(RF−RF_start)*delay_ps*1e-12))` 变化。起点相位全部以 RF 起点为参考；固定 LO 时第二轮 IF 的相对频率增量与 RF 相同。
+
+### 上变频配置示例
+
+现有 `examples/keysight_validation/short_validation_band.s1p` 仅覆盖 5～20 GHz。可用 RF 10～15 GHz、LO 5 GHz、方向 up，使 IF 为 15～20 GHz。RF 10～20 GHz、LO 5 GHz 的上变频将需要 IF 15～25 GHz，必须换成覆盖该频带的完整标准文件；软件不会外推。
+
+```python
+options = SimulationOptions(
+    rf_start_hz=10e9, rf_stop_hz=15e9, lo_hz=5e9,
+    frequency_conversion='up', standard_sampling='cubic_ri',
+)
+```
+
+生成和表征需要采用相同方向。两个非反转分支的 IF 增量都等于 RF 增量，现有按 RF 起点定义的相位 / 时延模型不变。六个测量和 Mixer.s2p 仍采用 RF 横轴；普通 Touchstone 不能编码双频轴，使用 accompanying JSON / CSV 或导出的 S2PX 确认真实 IF。
+
+### 生成模型
+
+读取标准文件的真实复数 Γ，不把它们替换为理想 +1/−1/0。第一轮在 RF 求值，第二轮在 IF 求值。
+
+```text
+m1 = EDF + ERF*Gamma_RF / (1−ESF*Gamma_RF)
+r_mixer = S11 + S12*S21*Gamma_IF / (1−S22*Gamma_IF)
+m2 = EDF + ERF*r_mixer / (1−ESF*r_mixer)
+```
+
+六个采集 S2P 的 **S11 是原始合成测量响应，其他三个列为零占位**，与已有 SOL 求解文件约定相同；它们不是完整的物理标准两端口网络。`Mixer.s2p` 含四个真实设定的有效系数，始终保持无噪声，以便独立比较算法恢复结果。其 RF 横轴和有效变频系数用于算法对比，普通 S2P 本身不执行频率转换。
+
+本版合成模型为互易混频器＋输入误差盒，支持任意标准套相同且为正的参考阻抗。未自动引入谐波、LO 泄漏、压缩或非互易传输。配置允许正转换增益；有效 S 矩阵奇异值超过 1 时记录提示，不静默修改模型。分母近零、频带覆盖不足、参考阻抗不一致等错误明确拒绝。
+
+### 基线噪声的定义
+
+噪声为各频点、各 SOL 连接状态之间独立的零均值圆对称复高斯噪声，**在输入误差映射之后加入**：
+
+```text
+sigma = 10^(noise_floor_db/20) / sqrt(noise_averages)
+noise = sigma/sqrt(2) * (normal_I + j*normal_Q)
+measured = clean + noise
+```
+
+`noise_floor_db` 为相对于归一化 `S=1` 的复数 RMS，−90 dB 在平均次数 1 时对应 3.1623e−5。不是 dBm、dBm/Hz、仪器实际底噪或 IFBW 模型。平均次数采用高斯等效复数平均，没有额外的功率平均。相同输入、配置、种子及 NumPy 版本可复现；报告记录 PCG64、NumPy 版本和实际有效 RMS。
+
+### 验证流程
+
+1. 先关闭噪声，生成七个 S2P；右侧预览混频器真值及两轮三标准响应。
+2. 点击“将本轮文件载入表征窗口”，自动填入六个测量文件、三个标准副本、LO、上下变频方向、插值方式和原始第二轮模式。全局开方符号按已知模拟真值的首点选择，并在报告中记录；这利用模拟真值，不代表反射测量能够识别绝对传输符号。
+3. 计算得到表征，再与 `Mixer.s2p` 比较。生成与反演应使用同一标准定义和相同求值方式；若有意验证插值差异，可改变反演插值方式。
+4. 启用噪声，改变噪声底、种子和平均次数，观察反演后的误差变化。噪声通常随 SOL 条件数和参数灵敏度被放大，表征误差不等于原始设置噪声 RMS。
+5. 若采样间隔导致传输乘积每点相位变化 ≥180°，报告提示混叠；需加密频点，不能靠固定整体符号解决。
+
+`simulation_truth.csv` 保留 RF/IF、实际 EDF/ESF/ERF、四个真值 S、每个标准的求值 Γ、每路无噪声响应、含噪声响应及实际加噪量。JSON 保留全部配置、标准原始路径与 SHA256、输出 SHA256、求值边界和噪声信息。
+
+```python
+from simulation import SimulationOptions, generate_files
+saved = generate_files(
+    [open_s1p, short_s1p, load_s1p],
+    output_parent,  # 已存在目录；函数新建独立子目录
+    SimulationOptions(
+        rf_start_hz=10e9, rf_stop_hz=20e9, points=201, lo_hz=5e9,
+        standard_sampling='cubic_ri', frequency_conversion='down',
+        transmission_db=-6, transmission_delay_ps=80,
+        noise_enabled=True, noise_floor_db=-90,
+        noise_seed=20261009, noise_averages=1,
+    ),
+)
+print(saved.directory)
+```
+
+新增 `simulation.py`（模型与文件层）、`simulate_gui.py`（配置/后台任务/预览），原查看、表征与比较功能保留。参数及最近标准/输出目录通过 QSettings 保存。
+
+本版 41 项数值回归通过：保留既有解析、比较、Keysight 下变频回归及生成验证，新增上下变频、IF 求标准、LO 高于 RF 的上变频、两种插值闭环、导出记录一致性、噪声 / 已修正第二轮和错误映射检查。Qt offscreen 检查方向联动、控件数量、旧插值设置回退、结果失效、演示重置及设置保存。具体记录见 `docs/validation_v1.5.0.md`；未在 Windows/PNA 现场运行，上变频 Keysight 对照待验证。
+
+### 操作顺序
+
+1. `uv run python main.py`，点击“两轮 SOL → 校准混频器表征”。
+2. 在六行测量输入中选择第一轮 Input Open/Short/Load 与第二轮 Mixer Open/Short/Load 的 S2P；仅读取 S11，两轮文件横轴都是 RF。
+3. 在共用标准区选择 OPEN、SHORT、LOAD 三个 S1P。第一轮按 RF 求标准值，第二轮按所选 IF=RF−LO 或 IF=RF+LO 求值；同一个标准文件须覆盖两个频段。
+4. 选择插值方式、上下变频方向、固定 LO（默认 5 GHz）、第二轮修正层级和传输整体分支。点击“计算并载入主界面”。
+5. 保存表征 S2P 或导出诊断包；打开 Keysight 结果，使用“比较任意两份表征文件”。差值 A−B，比较 S2P 通常选 StimulusFreq；S2PX 频率轴需按实际配置选择。
+
+### 标准件求值选项
+
+| 界面选项 | API 名称 | 行为 |
+|---|---|---|
+| 实虚部三次样条（推荐） | `cubic_ri` | 实部、虚部各自三次样条 |
+| 实虚部线性插值 | `linear_ri` | 实部、虚部各自线性插值 |
+
+所有方式优先使用容差内唯一命中的原定义值，默认容差 0.001 Hz，均禁止外推。三次样条用 SciPy CubicSpline 的 not-a-knot 边界；完整定义频带的边界会影响样条结果，建议使用原始完整标准文件。恒零 Load 保持为零；含零幅度的标准仍可采用 RI 插值。精确节点优先属于两种插值的共同规则，不是独立的“仅精确频点”选项。
+
+测量数据本身不插值。六个测量须有同一严格递增网格；测量和标准参考阻抗须一致，不自动重归一化。拒绝重复/歧义标准节点、缺频段、退化标准及病态求解。
+
+**GUI 首次默认 cubic_ri；纯数值 API 的 Options 默认仍为 linear_ri，以兼容旧调用。**调用 API 时请显式指定所需模式。插值推荐基于本次仿真对比，不意味着已经确认 Keysight 的内部算法。
+
+### 算法与边界
+
+一端口：`m=D+R*Gamma/(1−S*Gamma)`，其中 D=EDF、R=ERF、S=ESF。线性求解 `m=A+B*Gamma+S*m*Gamma`，恢复 D=A、R=B+A*S。
+
+第二轮为原始组合响应时，令 `Q=R1+S1*(D2−D1)`：
+
+- `C11=(D2−D1)/Q`
+- `P=C12*C21=R1*R2/Q**2`
+- `C22=S2−S1*R2/Q`
+
+代码使用数值等价的 Mobius 矩阵消除法，并用先修正反射、再直接求解的独立路径交叉核对。若第二轮已经第一轮校正，直接取其 D/S/R 为 C11/C22/P，不再消除输入误差盒。
+
+反射 SOL 仅确定传输乘积 P；以互易假设取 `C21=C12=sign*sqrt(abs(P))*exp(0.5j*unwrap(angle(P)))`，整体 ± 分支需独立相位参考。不得逐点复数主值开方造成 180° 跳变。支持固定 LO 的非反转下变频 IF=RF−LO（全部 RF>LO）和上变频 IF=RF+LO（IF 高于 RF）。不支持 IF=LO−RF 的反转差频分支，目标参考面为混频器＋滤波器整体。SOL 回代和两路径一致性是数值自检，不替代外部验收。
+
+### 输出和 API
+
+输出高精度 Hz/S/RI S2P（17 位有效数字，顺序 S11/S21/S12/S22）、自研 CSV S2PX、`sol_diagnostics.csv`、`characterization_report.json`。S2PX 仿照已知布局，不是 Keysight 生成文件；零幅度无法完整表达 DB S2PX 时诊断包仍保留 RI S2P。
+
+```python
+from characterization import Options, characterize, export_s2p, export_bundle
+result = characterize(
+    measurement_paths,  # [input_O,input_S,input_L,output_O,output_S,output_L]
+    [open_s1p, short_s1p, load_s1p],  # 两轮共用
+    Options(lo_hz=5e9, frequency_conversion='down',
+            standard_sampling='cubic_ri', second_round='raw', root_sign=1)
+)
+export_s2p(result, 'my_mixer.s2p')
+export_bundle(result, 'my_mixer_validation.zip')
+```
+
+数值 API 仍兼容旧版六标准路径调用；界面只要求三个。报告中的六条 inputs 表示六个测量角色，共用标准的路径和 SHA256 在相应两轮重复记录，保证可追溯。
+
+### 示例与验证
+
+- `examples/characterization_demo`：六个合成测量＋三个明确标为理想演示的标准定义，覆盖 RF/IF；载入演示按钮可直接计算。不是用户物理校准件。
+- `examples/keysight_validation`：本次会话的六个仿真文件、三个标准定义和当前 Keysight 表征。Short 是 5–20 GHz 验证频带摘录；来源与限制写在目录 README 和输入注释中。实际工作建议使用完整原始标准文件。
+- 本次 Keysight 数据全 201 点使用 cubic_ri 的最大复数差约 1.87×10⁻⁷；不是仪器测量准确度规格，剩余残差和 Keysight 内部求值方式尚待核实。
+- v1.5 数值和界面验证见 `docs/validation_v1.5.0.md`。
+
+## Windows 快速启动
+
+解压整个目录后，在目录中打开终端：
+
+```powershell
+uv run python main.py
+```
+
+已安装 uv 时也可双击 `start_windows.bat`，首次运行自动准备依赖。
+
+不用 uv：
+
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python main.py
+```
+
+PyCharm：使用安装了 requirements.txt 的 Python 解释器，直接运行 main.py。
+也可通过命令行打开文件：`python main.py "D:\data\mixer.s2px"`。
+
+## 使用
+
+- 打开、拖入一个或多个文件；左侧列表切换查看（不叠加）。
+- **粘贴文件内容**：直接粘贴完整头部和数据，不必先保存文件。按内容识别格式。
+- S11 / S12 位于上排，S21 / S22 位于下排。
+- 显示幅度 dB、线性幅度、相位、展开相位、实部、虚部。
+- 频率单位可选 Hz/kHz/MHz/GHz；S2PX 可选 InputFreq、OutputFreq、LO1Freq、可选 LO2Freq。另有点序号横轴。
+- 分段筛选；不连接不同连续段，展开相位不跨段。点数少时显示数据标记。
+- 绘图工具栏支持缩放、平移、恢复和保存图像；鼠标移动显示最近横坐标数据点。
+- 数据表显示完整复数数据、幅相、频率和功率列；文件信息页显示元数据；原始文本页便于核查。
+- CSV 导出**全部点和全部参数**，不受显示模式及分段筛选影响。CSV 包括 RI、dB/相位以及实际频率列，可在 Excel/Python 中分析。导出 CSV 为分析格式，不作为原始 S2PX 回读格式。
+- 最近目录、窗口大小和显示模式自动保存；文件读取和 CSV 写入在工作线程执行。
+
+## 格式和测量含义
+
+### S2P
+
+支持 Touchstone 1.x 二端口 S 参数的 DB/MA/RI、Hz/kHz/MHz/GHz、科学计数法与 Fortran D 指数、跨行记录及注释。
+标准顺序为 S11、S21、S12、S22；程序不会按 GUI 四窗顺序误读。
+当前不支持 Touchstone 2.x、噪声参数块、Y/Z/H/G 参数。遇到不支持的结构会报错。
+
+MixerConfiguration XML 作为元数据提取。非分段模式读取 NonSegmentSweepFrequencies，而非备用 SegmentList。
+S2P 仅以正文 StimulusFreq 作频率轴，**不依据 XML 自动补点或推断输入/输出频率**。
+配置点数与正文不符时提示，以正文为准。参考阻抗显示选项行中的值，不作重归一化。
+
+### S2PX
+
+按本次提供的 Keysight `!CSV A.01.00` Converter Sweep Data 格式实现。
+按 CSV 列名匹配，列顺序变化不影响解析。需要 InputFreq、OutputFreq 和四个 S 参数的 Mag (dB)/Phase (Deg) 列。
+支持可选 SegIndex、LO1Freq/LO2Freq 及功率列；所有数据列须为数值。不按 `Data Column Index` 的位置猜测。
+频率列按样例单位 Hz 读取。文件没有声明参考阻抗，程序显示“未声明”，不默认 50 Ω。
+其他尚未提供的 Keysight S2PX 变体不保证兼容，缺字段会明确提示。
+
+零幅度的 dB 为 -Inf、相位为 NaN；绘图留空，表格和 CSV 保留定义。展开相位需相邻点相位变化可辨识，不保证稀疏采样下的真实延迟恢复。查看模式不计算群时延、不自动修正打开的文件或强制互易；新增两轮SOL模块按明确选择的修正层级求解，并基于互易假设提取传输。
+
+## 示例与验证
+
+examples/pna_excerpt.s2p：用户贴出的两个真实数值记录，XML 缩减到相关配置，不是完整原文件。
+examples/pna_excerpt.s2px：用户贴出的一个真实数值记录。单点显示散点，不能形成频率响应曲线。
+两份示例首点幅相吻合至 S2PX 导出精度（六位小数）；不强行认为字节完全一致。
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+已验证：样例首点一致性、非对称 S12/S21 映射、跨行记录、MA/RI/DB 转换、CSV 列重排、分段相位解缠、异常数据拒绝及 CSV 导出。
+GUI 在 Linux Qt offscreen 环境进行启动/绘图/各显示模式和轴切换检查；未在 Windows 或真实 PNA 主机现场运行。
+
+## 文件结构
+
+- main.py：PyQt6 主窗口、后台任务、Matplotlib 绘图。
+- characterization.py：提取核心；simulate_gui.py / characterize_gui.py：配置及联动。
+- simulation.py：正向仿真、噪声、文件生成。
+- frequency_mapping.py：上下变频映射，生成和表征共用。
+- comparison.py / compare_gui.py：唯一频率匹配、统计和比较界面。
+- AGENTS.md：后续 AI / 开发者的工程约定。
+- parser.py：数据模型、两种格式解析、数值变换和 CSV 导出，无 GUI 依赖。
+- tests/test_parser.py：解析与数值回归用例。
+- examples/：本次文本样例。
+- pyproject.toml、requirements.txt：依赖声明。
+
+参考格式：IBIS Touchstone 标准 https://www.ibis.org/touchstone_ver2.0/ 。
+S2PX 解析依据用户提供文件结构；未假设其与标准 Touchstone 等价。
+
+## v1.1：同名 S2P / S2PX 比较
+
+1. 同时打开 `mixer.s2p` 与 `mixer.s2px`，点击左侧 **比较同名 S2P / S2PX**。
+2. 选择文件对；以不区分大小写的文件主名匹配，列表显示完整路径便于区分不同目录的同名文件。重复打开的文件也会列出，请确认所选对象。粘贴数据可用同名加不同后缀命名。
+3. 选择 S2P Stimulus 对应的 S2PX 频率列。初始为 InputFreq，**不保证所有文件的 Stimulus 都是输入频率，需用户确认**。
+4. 默认绝对频率容差 0.001 Hz，可调整。点击“计算差异”。
+5. 在 2×2 图中查看幅度差、相位差、复数差模值、实部差、虚部差或两文件幅度叠加。统计页给出各参数的最大绝对差及 RMS。导出匹配点差异 CSV，包括两文件原始行号、频率、复数值、段号和各类差值。
+
+定义：ΔdB = 20log10(|S2P|) − 20log10(|S2PX|)；Δφ = wrap(arg(S2P) − arg(S2PX))，范围 [−180°,180°)；Δcomplex = S2P − S2PX。
+
+匹配只采用频率的一对一唯一对应，不插值、不强行按行号配对；一对多、多对一及重复频率歧义点全部排除并统计。未匹配点不参与误差统计。当前不进行段号辅助匹配，因为 S2P 没有可靠的逐点段号。曲线在断点和段边界分开。
+零幅度的 dB/相位差为 NaN，对应统计排除；复数差仍有效。程序不假定两文件的未知参考阻抗相同、不作重归一化，也不自动给出算法正确/错误或通过/失败判据。
+
+本次样例匹配 1 点，S2P 余下 1 点未匹配；S21 幅度差约 +6.414e-7 dB，符合文件数值舍入差。已添加相位跨 ±180°、乱序/容差、重复频点、零幅度、无匹配以及差异导出回归测试。
