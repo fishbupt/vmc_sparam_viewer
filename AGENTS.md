@@ -18,6 +18,7 @@
 | frequency_mapping.py | 生成、表征共用的 RF / LO / IF 映射及验证 |
 | characterization.py | 标准解析 / 求值、SOL 求解、输入误差消除、连续开方、结果与诊断导出 |
 | simulation.py | 独立正向模型、可复现噪声、真值及六个测量文件生成 |
+| vmc_simulation.py / vmc_simulation_gui.py | VMC 六个原始测量正向生成、标准定义/真值/21误差项导出与校准窗口联动 |
 | vmc_calibration.py | 四组 SOL / 两频段普通 Thru / 变频 ETF 求解，单向 MUT 校准，校准包与结果导出 |
 | vmc_calibration_gui.py | 两页签：计算 VMC 校准误差项 / 校准 MUT；QThread 调用与主界面联动 |
 | parser.py | Dataset、Touchstone / S2PX 解析、数据变换 |
@@ -60,6 +61,7 @@ uv run python -m unittest discover -s tests -v
 uv run python tests/gui_simulation_smoke.py
 uv run python tests/gui_vmc_calibration_smoke.py
 uv run python tests/gui_viewer_display_smoke.py
+uv run python tests/gui_vmc_simulation_smoke.py
 ```
 
 算法 / 映射修改需覆盖上下变频、两种插值、两种幅相插值跨 ±180° / 多圈解缠绕、样条幅相多项式解析恢复与负幅度拒绝、线性幅度而非 dB、零幅度相位拒绝、精确节点原值保留、非理想标准、无噪声闭环、原始 / 已修正第二轮、输出轴 / 注释 / JSON 一致性、外推拒绝及独立正向波量方程。不要仅以生成器和提取器相互吻合作为正确性依据。
@@ -78,3 +80,11 @@ GUI 检查控件只有两种插值、方向改变后的结果失效、生成到�
 - 变频原始文件横轴显式选择 RF / IF / dual；dual 要求频段不重叠且两段对应四参数一致。普通 SOL / Thru 按实际频段匹配。标准定义可插值，原始测量不插值；不拟合结果消除差异。
 - 本轮没有 isolation、switch-term 和 receiver-ratio 独立采集，不假定 Keysight 与本模型误差项规范完全相同。GUI offscreen 不代表 Keysight / Windows 现场验证。
 - 校准包使用无 pickle 的 NPZ 和 JSON，校验数组 SHA256、项目 / 形状 / 频率配置；原子写入；源文件哈希来自解析同一份字节快照。MUT 文件 / 横轴改动只使 MUT 结果失效；校准配置改动则使校准包与 MUT 结果均失效。
+
+## VMC 原始测量生成约定（v1.7.0）
+
+- 生成器以 `a=T+E*b; b=C*a; M=D+T*b` 独立正向求解；不得调用 calibrate / calibrate_mut 得出原始响应或期望误差项。只在一键载入适配层复用配置与输入映射类型。
+- 普通 SOL / Thru 按物理频率生成，CalTHRU / MUT 按成对 RF→IF 生成。双频段复制仅允许不重叠频段；RF/IF两段必须复制同一噪声样本，间隔桥接值仅用于文件覆盖，不参与测量。
+- 默认理想 SOL + Flush 零延迟/损耗；定义文件、raw 文件和真值文件严格区分。导入实际定义按同一幅相插值求值、禁止外推、阻抗一致，不更改原校准算法。
+- MUT 固定 S12 真值为零，cal mixer 模型互易；单程 t 与 ERF=t² 区分，端口盒按实际 RF/IF 频率计算。默认同盒无噪声 SOL 两端口相等；独立盒/噪声允许不同。
+- 输入文件只读一次，解析/归档副本/哈希来自同一字节快照。运行目录原子发布，失败清理暂存目录，不覆盖旧运行；保存无噪声真值、clean/raw、频率映射与参数/哈希。

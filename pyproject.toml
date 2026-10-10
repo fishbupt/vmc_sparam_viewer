@@ -1,6 +1,6 @@
 [project]
 name = "vmc-calibration-workbench"
-version = "1.6.3"
+version = "1.7.0"
 description = "VMC calibration workbench for simulation, mixer characterization, calibration and validation"
 requires-python = ">=3.10"
 dependencies = ["PyQt6>=6.6,<7", "numpy>=1.24,<3", "matplotlib>=3.8,<4", "scipy>=1.10,<2"]

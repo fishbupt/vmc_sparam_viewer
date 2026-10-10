@@ -1,4 +1,4 @@
-# VMC Calibration Workbench · VMC 校准与验证工作台 · v1.6.3
+# VMC Calibration Workbench · VMC 校准与验证工作台 · v1.7.0
 
 用于 VMC 算法研发与验证：生成仿真数据、表征校准混频器、计算校准误差项、校准 MUT，以及展示和比较 S2P / Keysight Converter Sweep Data S2PX。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。
 
@@ -10,6 +10,25 @@
 - [《VMC 校准与验证工作台使用说明》](docs/vmc_calibration.md)。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
+
+## v1.7.0：生成 VMC 原始测量 SNP
+
+主界面 **生成 VMC 原始测量 SNP** 打开独立的正向仿真窗口。默认复现此前 RF 10～20 GHz、LO 20 GHz、IF 30～40 GHz 的 Dummy DUT baseline，生成六个原始 S2P：
+
+| 文件 | 用途 |
+| --- | --- |
+| `open_raw.s2p` / `short_raw.s2p` / `load_raw.s2p` | 两端口 SOL；S11 为 Port1、S22 为 Port2，交叉传输为零 |
+| `thru_raw.s2p` | 两个实际频段的普通 Thru 原始测量 |
+| `cal_mixer_raw.s2p` | 接入校准混频器后的 CalTHRU 原始测量 |
+| `mut_raw.s2p` | 接入 MUT 后的原始测量 |
+
+附带 `standard_open/short/load.s1p`、`thru_definition.s2p`、`calibration_mixer.s2p`、`mut_truth.s2p` / CSV、21 项 `expected_error_terms.csv`、频率映射、无 pickle 的 clean/raw NPZ、参数与源文件/输出哈希报告。**普通 Thru 默认是零反射、0 dB、零延迟 Flush；raw 文件包含端口误差，不是标准真值。**
+
+支持上下变频、RF / IF / 非重叠双频段复制横轴、混频器幅相时延、相同或独立端口误差盒、可复现复高斯噪声，以及导入实际 SOL / THRU / 已表征校准混频器定义。MUT 固定 S12=0 的单向真值。所有表征输出归一为 RF 横轴；默认同一物理频率的两端口 SOL S11=S22，独立误差盒或独立噪声下不要求相等。
+
+每次创建独立输出目录，不覆盖旧结果。**将本轮文件载入 VMC 校准窗口** 自动填入配套定义、原始测量、RF/LO/IF 与文件横轴；计算误差项后即可校准 MUT。右侧预览和主界面同时提供 MUT 真值与原始测量的 VC21/SM21。Keysight 与自研校准都必须使用与生成器一致的标准定义，不能直接套用机械校准套默认偏移。普通 S2P 不自行执行变频；Keysight 的 Dummy DUT 接收器读取行为仍需现场确认。
+
+验证见 [docs/validation_v1.7.0.md](docs/validation_v1.7.0.md)。
 
 ## v1.6.3：主界面显示与 Y 轴范围
 

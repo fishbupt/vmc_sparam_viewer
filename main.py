@@ -212,6 +212,9 @@ class Window(QMainWindow):
         vmc_btn = QPushButton('VMC 校准误差项 / 校准 MUT')
         vmc_btn.clicked.connect(self.calibrate_vmc)
         side.addWidget(vmc_btn)
+        vmc_sim_btn = QPushButton('生成 VMC 原始测量 SNP')
+        vmc_sim_btn.clicked.connect(self.simulate_vmc)
+        side.addWidget(vmc_sim_btn)
         self.files = QListWidget()
         self.files.currentRowChanged.connect(self.select)
         side.addWidget(self.files, 1)
@@ -310,6 +313,14 @@ class Window(QMainWindow):
     def calibrate_vmc(self):
         from vmc_calibration_gui import VMCCalibrationDialog
         dialog = VMCCalibrationDialog(self)
+        dialog.generated.connect(self.add_dataset)
+        dialog.exec()
+
+    def simulate_vmc(self):
+        if self.busy():
+            return
+        from vmc_simulation_gui import VMCSimulationDialog
+        dialog = VMCSimulationDialog(self)
         dialog.generated.connect(self.add_dataset)
         dialog.exec()
 

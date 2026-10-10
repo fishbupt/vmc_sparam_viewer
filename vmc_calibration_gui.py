@@ -291,6 +291,28 @@ class VMCCalibrationDialog(QDialog):
         self.fields['cal_mixer'].setText(m['calibration_mixer']);self.fields['cal_raw'].setText(m['cal_mixer_raw'])
         self.accept_calibration(cal);self.remember()
 
+    def set_generated_files(self,saved):
+        """Load a generation run's matching definitions, measurements and axes."""
+        from dataclasses import asdict
+        o=asdict(saved.calibration_options());m=asdict(saved.calibration_inputs())
+        for k,spin in self.spins.items():
+            spin.setValue(o[k]/(1e9 if k.endswith('_hz') and k!='frequency_tolerance_hz' else 1))
+        self.points.setValue(o['points'])
+        for key,c in [('frequency_conversion',self.conversion),('standard_sampling',self.sampling),
+                      ('raw_axis',self.raw_axis),('mixer_definition_axis',self.definition_axis)]:
+            c.setCurrentIndex(c.findData(o[key]))
+        self.mut_axis.setCurrentIndex(self.mut_axis.findData(o['raw_axis']))
+        self.separate_std.setChecked(False);self.separate_sol.setChecked(False)
+        for kind,path in zip(KINDS,m['standards']['P1']):self.fields['std_P1_'+kind].setText(path)
+        for kind,path in zip(KINDS,m['sol']['P1_RF']):self.fields['sol_shared_'+kind].setText(path)
+        self.defined_thru.setChecked(True)
+        for band in ('RF','IF'):
+            self.fields['thru_'+band].setText(m['thru_raw'][band])
+            self.fields['definition_thru_'+band].setText(m['thru_definition'][band])
+        self.fields['cal_mixer'].setText(m['calibration_mixer']);self.fields['cal_raw'].setText(m['cal_mixer_raw'])
+        self.fields['mut_raw'].setText(str(saved.mut_path));self.tabs.setCurrentIndex(0)
+        self.remember();self.log.appendPlainText('已载入本轮生成的配套定义与原始测量，请计算校准误差项后校准 MUT。')
+
     def export(self):
         if not self.mut_result:return
         path,_=QFileDialog.getSaveFileName(self,'导出校准 MUT','calibrated_mut.zip','ZIP (*.zip)')

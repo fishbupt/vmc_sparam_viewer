@@ -1,6 +1,6 @@
 # VMC 校准与验证工作台使用说明
 
-**VMC Calibration Workbench · v1.6.3**
+**VMC Calibration Workbench · v1.7.0**
 
 本文说明全量 VMC 校准与校准 MUT；仿真数据生成、两轮 SOL 表征与主界面展示操作见仓库 README。
 
@@ -120,3 +120,13 @@ uv run python tests/gui_vmc_calibration_smoke.py
 ```
 
 新测试的标准、误差盒和 Thru 由独立内部波量方程构造，覆盖非理想标准、非互易 defined Thru、上下变频、三种原始横轴、非对称端口误差、文件重载和异常拒绝；不依赖个人 examples 数据。详见 validation_v1.6.0.md。
+
+## 生成 VMC 原始测量输入
+
+主界面点击“生成 VMC 原始测量 SNP”。左侧配置 RF / LO / 自动 IF、原始文件横轴、标准定义、校准混频器、MUT、端口误差盒与噪声；右侧预览 MUT 真值 VC21 和原始 SM21 的幅度 / 解缠绕相位。
+
+默认使用此前上变频 baseline 参数，普通 THRU 为零延迟 / 零损耗 Flush。无需输入文件即可生成；若勾选导入实际 SOL / THRU / 校准混频器，必须填写对应文件并覆盖需要的频段，参考阻抗一致。标准定义只允许幅相线性或幅相三次样条插值，不外推。校准混频器导入横轴显式选择 RF 或 IF，输出 `calibration_mixer.s2p` 统一使用 RF。
+
+点击“生成 VMC 原始测量 SNP”后，在输出父目录内创建独立 `vmc_dummy_…` 文件夹，包含六个 raw S2P、配套 SOL/THRU 定义、无噪声校准混频器/MUT 真值、误差项和报告。噪声只叠加原始采集；真值与定义保持无噪声。双频段复制的两个频段相同，间隔桥接值不参与校准。
+
+点击“将本轮文件载入 VMC 校准窗口”，核对自动填入的定义与原始文件，先计算误差项，再切换到“校准 MUT”执行。不要把 `thru_definition.s2p` 当作 `thru_raw.s2p`，也不要把 `calibration_mixer.s2p` 当作 CalTHRU 原始测量。使用 Keysight Dummy DUT 时也应使用这一套标准定义；默认 Flush Offset Delay / Loss 为零。

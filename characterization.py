@@ -285,7 +285,7 @@ def characterize(measurement_paths, standard_paths, options=Options()):
     diagnostics = {'SOL1_condition': cond1, 'SOL2_condition': cond2,
                    'Direct_fit_condition': direct_cond, 'SOL1_residual': residual1,
                    'SOL2_residual': residual2, 'Two_path_complex_difference': cross_error}
-    manifest = {'algorithm': 'SOL Mobius composition / reciprocal converter', 'version': '1.6.3',
+    manifest = {'algorithm': 'SOL Mobius composition / reciprocal converter', 'version': '1.7.0',
                 'lo_hz': options.lo_hz, 'frequency_conversion': options.frequency_conversion,
                 'if_relation': frequency_relation(options.frequency_conversion)+' (non-inverting)',
                 'second_round': options.second_round, 'standard_sampling': options.standard_sampling,
