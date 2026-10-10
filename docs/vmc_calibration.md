@@ -1,6 +1,6 @@
 # VMC 校准与验证工作台使用说明
 
-**VMC Calibration Workbench · v1.6.2**
+**VMC Calibration Workbench · v1.6.3**
 
 本文说明全量 VMC 校准与校准 MUT；仿真数据生成、两轮 SOL 表征与主界面展示操作见仓库 README。
 

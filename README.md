@@ -1,4 +1,4 @@
-# VMC Calibration Workbench · VMC 校准与验证工作台 · v1.6.2
+# VMC Calibration Workbench · VMC 校准与验证工作台 · v1.6.3
 
 用于 VMC 算法研发与验证：生成仿真数据、表征校准混频器、计算校准误差项、校准 MUT，以及展示和比较 S2P / Keysight Converter Sweep Data S2PX。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。
 
@@ -10,6 +10,12 @@
 - [《VMC 校准与验证工作台使用说明》](docs/vmc_calibration.md)。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
+
+## v1.6.3：主界面显示与 Y 轴范围
+
+在任意 S 参数子图内右键，通过“显示”菜单统一切换幅度（dB / 线性）、相位、解缠绕相位、实部或虚部；与左侧“显示”选择同步。解缠绕按原始连续分段计算，零幅度处相位未定义，不跨这些位置展开。
+
+右键可对当前子图选择 **Y 轴 AutoScale** 或输入手动最小 / 最大值；左侧 **Y 轴设置…** 可选择单个或全部 S 参数。手动范围必须是有限数值且最小值小于最大值；范围按显示模式分别保留，在本次会话内切换文件和分段后继续生效。AutoScale 恢复当前数据 / 分段的自动范围。验证见 [docs/validation_v1.6.3.md](docs/validation_v1.6.3.md)。
 
 ## v1.6.2：VMC 校准窗口左右布局
 

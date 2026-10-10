@@ -5,18 +5,18 @@ import traceback
 from pathlib import Path
 import numpy as np
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QAbstractTableModel, QSettings
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QActionGroup, QCursor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QListWidget, QComboBox, QLabel, QSplitter, QTabWidget,
     QTextEdit, QPlainTextEdit, QFileDialog, QMessageBox, QDialog, QDialogButtonBox,
-    QTableView, QProgressBar, QGroupBox, QLineEdit)
+    QTableView, QProgressBar, QGroupBox, QLineEdit, QMenu)
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from parser import PARAMS, load_file, parse_text, table_data, export_csv, values, runs
 
 MODES = {'幅度 (dB)': 'dB', '线性幅度': 'Magnitude', '相位 (°)': 'Phase',
-         '展开相位 (°)': 'Unwrapped', '实部': 'Real', '虚部': 'Imag'}
+         '解缠绕相位 (°)': 'Unwrapped', '实部': 'Real', '虚部': 'Imag'}
 COLORS = {'S11': '#2563eb', 'S12': '#d97706', 'S21': '#059669', 'S22': '#7c3aed'}
 STYLE = '''
 QMainWindow, QDialog { background: #f3f6fa; }
@@ -86,6 +86,67 @@ class PasteDialog(QDialog):
         buttons.rejected.connect(self.reject)
         box.addWidget(buttons)
 
+class YAxisDialog(QDialog):
+    """Choose automatic or finite, increasing limits in the current display units."""
+    def __init__(self, parent, param=None):
+        super().__init__(parent)
+        self.setWindowTitle('Y 轴范围 · ' + parent.mode.currentText())
+        form = QFormLayout(self)
+        self.target = QComboBox()
+        self.target.addItem('全部 S 参数', None)
+        for p in PARAMS:
+            self.target.addItem(p, p)
+        self.target.setCurrentIndex(self.target.findData(param))
+        form.addRow('应用到', self.target)
+        self.scale = QComboBox()
+        self.scale.addItems(['AutoScale（自动缩放）', '手动范围'])
+        form.addRow('缩放方式', self.scale)
+        self.minimum = QLineEdit()
+        self.maximum = QLineEdit()
+        form.addRow('最小值', self.minimum)
+        form.addRow('最大值', self.maximum)
+        self.error = QLabel()
+        self.error.setWordWrap(True)
+        self.error.setStyleSheet('color: #b91c1c;')
+        form.addRow(self.error)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        form.addRow(buttons)
+        self.owner = parent
+        self.target.currentIndexChanged.connect(self.refresh)
+        self.scale.currentIndexChanged.connect(self.toggle)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self.refresh()
+
+    def refresh(self):
+        p = self.target.currentData() or PARAMS[0]
+        limits = self.owner.y_limits.get((MODES[self.owner.mode.currentText()], p))
+        shown = limits or self.owner.axes[PARAMS.index(p)].get_ylim()
+        self.minimum.setText(f'{shown[0]:.12g}')
+        self.maximum.setText(f'{shown[1]:.12g}')
+        self.scale.setCurrentIndex(1 if limits else 0)
+        self.toggle()
+
+    def toggle(self):
+        manual = self.scale.currentIndex() == 1
+        self.minimum.setEnabled(manual)
+        self.maximum.setEnabled(manual)
+        self.error.clear()
+
+    def accept(self):
+        limits = None
+        if self.scale.currentIndex() == 1:
+            try:
+                limits = (float(self.minimum.text()), float(self.maximum.text()))
+                if not all(np.isfinite(limits)) or limits[0] >= limits[1]:
+                    raise ValueError
+            except ValueError:
+                self.error.setText('请输入有限数值，并确保最小值小于最大值。')
+                return
+        self.owner.set_y_limits(self.target.currentData(), limits)
+        super().accept()
+
+
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -95,6 +156,7 @@ class Window(QMainWindow):
         self.dataset = None
         self.task = None
         self.pending = []
+        self.y_limits = {}
         self.setWindowTitle('VMC Calibration Workbench · VMC 校准与验证工作台')
         self.resize(1420, 900)
         self.setMinimumSize(1000, 700)
@@ -160,7 +222,8 @@ class Window(QMainWindow):
         form = QFormLayout(group)
         self.mode = QComboBox()
         self.mode.addItems(MODES)
-        self.mode.setCurrentText(self.settings.value('mode', '幅度 (dB)'))
+        saved_mode = self.settings.value('mode', '幅度 (dB)')
+        self.mode.setCurrentText('解缠绕相位 (°)' if saved_mode == '展开相位 (°)' else saved_mode)
         self.axis = QComboBox()
         self.unit = QComboBox()
         self.unit.addItems(['GHz', 'MHz', 'kHz', 'Hz'])
@@ -169,12 +232,15 @@ class Window(QMainWindow):
         for label, box in [('显示', self.mode), ('横轴', self.axis), ('频率单位', self.unit), ('分段', self.segment)]:
             form.addRow(label, box)
             box.currentIndexChanged.connect(self.plot)
+        y_axis_btn = QPushButton('Y 轴设置…')
+        y_axis_btn.clicked.connect(lambda: self.edit_y_limits())
+        form.addRow(y_axis_btn)
         side.addWidget(group)
         self.export_btn = QPushButton('导出完整数据 CSV')
         self.export_btn.clicked.connect(self.export)
         self.export_btn.setEnabled(False)
         side.addWidget(self.export_btn)
-        note = QLabel('保留原始点序；不插值、不补点。\n展开相位按连续分段分别计算。')
+        note = QLabel('保留原始点序；不插值、不补点。\n解缠绕相位按连续分段分别计算。\n右键曲线切换显示 / 设置 Y 轴。')
         note.setWordWrap(True)
         note.setStyleSheet('color: #64748b; padding: 8px 0;')
         side.addWidget(note)
@@ -202,6 +268,7 @@ class Window(QMainWindow):
         chart.addWidget(self.toolbar)
         chart.addWidget(self.canvas, 1)
         self.canvas.mpl_connect('motion_notify_event', self.hover)
+        self.canvas.mpl_connect('button_press_event', self.plot_context_menu)
         self.tabs.addTab(page, 'S 参数 · 2 × 2')
         self.table = QTableView()
         self.table.setAlternatingRowColors(True)
@@ -378,6 +445,48 @@ class Window(QMainWindow):
             self.files.setCurrentRow(min(row, len(self.datasets) - 1))
             self.select(self.files.currentRow())
 
+    def set_y_limits(self, param, limits):
+        mode = MODES[self.mode.currentText()]
+        if limits is not None:
+            if not all(np.isfinite(limits)) or limits[0] >= limits[1]:
+                raise ValueError('Y 轴最小值必须小于最大值，且均为有限数值。')
+        for p in PARAMS if param is None else [param]:
+            if limits is None:
+                self.y_limits.pop((mode, p), None)
+            else:
+                self.y_limits[(mode, p)] = tuple(limits)
+        self.plot()
+
+    def edit_y_limits(self, param=None):
+        YAxisDialog(self, param).exec()
+
+    def make_plot_menu(self, param):
+        menu = QMenu(self)
+        display = menu.addMenu('显示（全部 S 参数）')
+        group = QActionGroup(display)
+        group.setExclusive(True)
+        for label in MODES:
+            action = display.addAction(label)
+            action.setCheckable(True)
+            action.setChecked(label == self.mode.currentText())
+            group.addAction(action)
+            action.triggered.connect(lambda checked=False, text=label: self.mode.setCurrentText(text))
+        menu.addSeparator()
+        auto = menu.addAction(f'{param} Y 轴 AutoScale')
+        auto.triggered.connect(lambda: self.set_y_limits(param, None))
+        manual = menu.addAction(f'{param} Y 轴手动范围…')
+        manual.triggered.connect(lambda: self.edit_y_limits(param))
+        menu.addAction('全部 Y 轴 AutoScale', lambda: self.set_y_limits(None, None))
+        return menu
+
+    def plot_context_menu(self, event):
+        if event.button != 3 or event.inaxes not in self.axes:
+            return
+        p = PARAMS[list(self.axes).index(event.inaxes)]
+        menu = self.make_plot_menu(p)
+        menu.exec(QCursor.pos())
+        menu.deleteLater()
+
     def plotting_arrays(self, param):
         d = self.dataset
         key = self.axis.currentData()
@@ -413,6 +522,9 @@ class Window(QMainWindow):
                 ax.margins(x=.05)
             else:
                 ax.text(.5, .5, 'Open or paste S2P / S2PX', ha='center', va='center', transform=ax.transAxes, color='#94a3b8')
+            limits = self.y_limits.get((MODES[self.mode.currentText()], p))
+            if limits is not None:
+                ax.set_ylim(*limits)
         self.toolbar.update()
         self.canvas.draw_idle()
 

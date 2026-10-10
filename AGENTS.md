@@ -59,6 +59,7 @@ GUI 不得复制另一套算法公式。耗时计算和文件 I/O 继续放到�
 uv run python -m unittest discover -s tests -v
 uv run python tests/gui_simulation_smoke.py
 uv run python tests/gui_vmc_calibration_smoke.py
+uv run python tests/gui_viewer_display_smoke.py
 ```
 
 算法 / 映射修改需覆盖上下变频、两种插值、两种幅相插值跨 ±180° / 多圈解缠绕、样条幅相多项式解析恢复与负幅度拒绝、线性幅度而非 dB、零幅度相位拒绝、精确节点原值保留、非理想标准、无噪声闭环、原始 / 已修正第二轮、输出轴 / 注释 / JSON 一致性、外推拒绝及独立正向波量方程。不要仅以生成器和提取器相互吻合作为正确性依据。
@@ -69,7 +70,7 @@ GUI 检查控件只有两种插值、方向改变后的结果失效、生成到�
 
 ## VMC 全量校准约定（v1.6.0）
 
-- 主界面保留展示与比较入口；不另建“对比验证”页。工作流名称为“校准 MUT”。主界面相位比较增强留给后续独立提交。
+- 主界面保留展示与比较入口；不另建“对比验证”页。工作流名称为“校准 MUT”。主界面显示支持右键幅度 / 相位 / 解缠绕相位及独立 Y 轴范围；比较仍复用现有入口。
 - VMC 校准窗口采用左右布局：左侧为 RF / LO / 自动派生 IF、求值 / 横轴配置与校准操作；右侧为标准件定义 OPEN / SHORT / LOAD / THRU、原始测量 OPEN / SHORT / LOAD / THRU / CalTHRU、独立的已表征校准混频器。MUT 页共享左侧配置；左右宽度可调，各自滚动。
 - 保留 P1_RF / P1_IF / P2_RF / P2_IF 的 EDF、ESF、ERF；普通 Thru 求每频段 ELF / ELR / ETF / ETR，再以 P1_RF_ESF 和 IF_ELF 求 VMC_ETF。
 - 校准混频器 ETF 的完整分母为 `(1-C11*ESF)*(1-C22*ELF)-C12*C21*ESF*ELF`，交叉项是 C11*C22，不能写成 C11*C21。
