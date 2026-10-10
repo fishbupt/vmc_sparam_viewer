@@ -7,7 +7,7 @@ import numpy as np
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QAbstractTableModel, QSettings, QTimer
 from PyQt6.QtGui import QAction, QActionGroup, QCursor, QColor
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QFormLayout,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QComboBox, QLabel, QPlainTextEdit, QFileDialog, QMessageBox,
     QDialog, QDialogButtonBox, QProgressBar, QLineEdit, QMenu, QListWidgetItem)
 from parser import PARAMS, load_file, parse_text, table_data, export_csv, values, runs
@@ -185,18 +185,46 @@ class Window(QMainWindow):
         tools.addAction('两轮 SOL 表征…', self.characterize_mixer)
         tools.addAction('生成两轮 SOL 仿真…', self.simulate_sol)
         tools.addAction('生成 VMC 原始测量 SNP', self.simulate_vmc)
+        from workbench_gui import WorkbenchPages, CALIBRATION_TYPES
+        saved_type = str(self.settings.value('calibration_type', 'vmc'))
+        self.calibration_type = saved_type if saved_type in CALIBRATION_TYPES else 'vmc'
+        self.type_menu = self.menuBar().addMenu('校准类型')
+        type_group = QActionGroup(self.type_menu)
+        type_group.setExclusive(True)
+        self.type_actions = {}
+        groups = {}
+        for key, (label, category) in CALIBRATION_TYPES.items():
+            if category not in groups:
+                groups[category] = self.type_menu.addMenu(category)
+            action = groups[category].addAction(label + ('（待实现）' if key != 'vmc' else ''))
+            action.setCheckable(True)
+            action.setChecked(key == self.calibration_type)
+            type_group.addAction(action)
+            action.triggered.connect(lambda checked=False, name=key: self.choose_calibration_type(name))
+            self.type_actions[key] = action
         root = QWidget()
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
         title = QLabel('VNA Calibration Workbench · VNA 校准与验证工作台')
         title.setStyleSheet('font-size: 18pt; font-weight: bold; padding: 5px;')
         layout.addWidget(title)
-        context = QLabel('S 参数查看与比较 · 无需创建项目    |    校准工作流程：VMC（其他算法见升级规划）')
+        context_row = QHBoxLayout()
+        context = QLabel('S 参数查看与比较 · 无需创建项目')
         context.setStyleSheet('color: #64748b; padding: 0 5px 8px;')
-        layout.addWidget(context)
+        context_row.addWidget(context)
+        context_row.addStretch()
+        context_row.addWidget(QLabel('校准类型'))
+        self.type_selector = QComboBox()
+        self.type_selector.setMinimumContentsLength(22)
+        for key, (label, _) in CALIBRATION_TYPES.items():
+            self.type_selector.addItem(label + ('（待实现）' if key != 'vmc' else ''), key)
+        self.type_selector.setCurrentIndex(self.type_selector.findData(self.calibration_type))
+        self.type_selector.currentIndexChanged.connect(self.select_calibration_type)
+        context_row.addWidget(self.type_selector)
+        layout.addLayout(context_row)
         from viewer_gui import build_viewer
-        from workbench_gui import WorkbenchPages
         self.workspace = WorkbenchPages(self, build_viewer(self, MODES))
+        self.workspace.calibration_type_changed()
         layout.addWidget(self.workspace, 1)
         self.log_toggle = QPushButton('日志与数据诊断 ▸')
         self.log_toggle.setCheckable(True)
@@ -226,8 +254,37 @@ class Window(QMainWindow):
         self.paste_btn.setEnabled(not active)
         self.export_btn.setEnabled(self.dataset is not None and not active)
         self.workspace.refresh_actions()
+        self.type_selector.setEnabled(not active)
+        self.type_menu.setEnabled(not active)
         if self.pending and not active:
             self.read_next()
+
+    def choose_calibration_type(self, key):
+        """Menu and explicit VMC tools use the same visible selection."""
+        index = self.type_selector.findData(key)
+        if index < 0:
+            return False
+        if self.busy() and key != self.calibration_type:
+            self.type_actions[self.calibration_type].setChecked(True)
+            self.statusBar().showMessage('后台任务运行中，请完成后再切换校准类型。')
+            return False
+        self.type_selector.setCurrentIndex(index)
+        return self.calibration_type == key
+
+    def select_calibration_type(self, index):
+        key = self.type_selector.itemData(index)
+        if key is None:
+            return
+        if self.busy():
+            self.type_selector.blockSignals(True)
+            self.type_selector.setCurrentIndex(self.type_selector.findData(self.calibration_type))
+            self.type_selector.blockSignals(False)
+            self.type_actions[self.calibration_type].setChecked(True)
+            return
+        self.calibration_type = key
+        self.type_actions[key].setChecked(True)
+        self.settings.setValue('calibration_type', key)
+        self.workspace.calibration_type_changed()
 
     def toggle_log(self, visible):
         self.log.setVisible(visible)
@@ -268,6 +325,8 @@ class Window(QMainWindow):
         self.workspace.show_page(6)
 
     def calibrate_vmc(self):
+        if not self.choose_calibration_type('vmc'):
+            return
         self.workspace.show_page(4)
 
     def simulate_vmc(self):

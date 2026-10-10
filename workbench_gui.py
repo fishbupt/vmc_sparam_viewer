@@ -14,6 +14,26 @@ PAGES = (
     ('验证报告', '复用差异曲线、误差统计与 CSV 导出；不自动判定容差通过。'),
 )
 
+# These are workflow choices, not a claim that their numerical engines exist.
+CALIBRATION_TYPES = {
+    'vmc': ('VMC · 矢量混频器校准', '频率变换'),
+    'smc': ('SMC · 标量混频器校准', '频率变换'),
+    'response': ('Response · 响应校准', '基础 S 参数'),
+    'enhanced_response': ('Enhanced Response · 增强响应', '基础 S 参数'),
+    'sol': ('SOL / OSM · 单端口校准', '基础 S 参数'),
+    'solt': ('SOLT · 双端口校准', '基础 S 参数'),
+    'qsolt': ('QSOLT · 快速 SOLT', '基础 S 参数'),
+    'solr': ('SOLR / Unknown Thru', '基础 S 参数'),
+    'trl': ('TRL · 传输线校准', '传输线'),
+    'trm': ('TRM · 传输线校准', '传输线'),
+    'lrm': ('LRM / LRL · 传输线校准', '传输线'),
+    'multiline_trl': ('Multiline TRL · 多线 TRL', '传输线'),
+    'power': ('功率校准', '专项工作流'),
+    'multiport': ('多端口校准', '专项工作流'),
+    'ecal': ('ECal · 电子校准工作流', '专项工作流'),
+    'noise': ('噪声校准', '专项工作流'),
+}
+
 
 class WorkbenchPages(QWidget):
     def __init__(self, owner, viewer):
@@ -53,6 +73,18 @@ class WorkbenchPages(QWidget):
         box.addLayout(head)
         self.stack = QStackedWidget()
         self.stack.addWidget(viewer)
+        self.placeholder = QWidget()
+        empty_layout = QVBoxLayout(self.placeholder)
+        self.placeholder_title = QLabel()
+        self.placeholder_title.setStyleSheet('font-size: 16pt; color: #64748b;')
+        self.placeholder_title.setWordWrap(True)
+        self.placeholder_note = QLabel('此类型的校准页面暂未实现。')
+        self.placeholder_note.setStyleSheet('color: #64748b;')
+        empty_layout.addStretch()
+        empty_layout.addWidget(self.placeholder_title, alignment=Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addWidget(self.placeholder_note, alignment=Qt.AlignmentFlag.AlignCenter)
+        empty_layout.addStretch()
+        self.stack.addWidget(self.placeholder)
         box.addWidget(self.stack, 1)
         layout.addWidget(body, 1)
         self.navigation.currentRowChanged.connect(self.navigate)
@@ -85,11 +117,18 @@ class WorkbenchPages(QWidget):
             widget.deleteLater()
         self.heading.setText(PAGES[index][0])
         self.description.setText(PAGES[index][1])
+        if index == 5 and self.owner.calibration_type != 'vmc':
+            self.heading.setText('校准 DUT')
         if index == 0:
             self.stack.setCurrentIndex(0)
             self.button('添加文件…', self.owner.open_files)
         elif index == 6:
             self.show_comparison()
+        elif self.owner.calibration_type != 'vmc':
+            label = CALIBRATION_TYPES[self.owner.calibration_type][0]
+            self.description.setText(label + ' · 待实现')
+            self.placeholder_title.setText(label)
+            self.stack.setCurrentWidget(self.placeholder)
         else:
             self.ensure_calibration()
             self.calibration.set_workspace_section(
@@ -120,6 +159,8 @@ class WorkbenchPages(QWidget):
             self.stack.addWidget(self.calibration)
 
     def show_simulation(self):
+        if not self.owner.choose_calibration_type('vmc'):
+            return
         if self.navigation.currentRow() == 5:
             self.navigate(5)
         else:
@@ -135,6 +176,8 @@ class WorkbenchPages(QWidget):
         self.button('返回测量导入', lambda: self.navigate(5))
 
     def use_generated_files(self, saved):
+        if not self.owner.choose_calibration_type('vmc'):
+            return
         self.ensure_calibration()
         if self.calibration.worker:
             self.owner.statusBar().showMessage('校准正在执行，请完成后再载入生成文件。')
@@ -164,6 +207,10 @@ class WorkbenchPages(QWidget):
     def refresh_actions(self):
         if self.primary_action is not None:
             self.primary_action.setEnabled(not self.owner.busy())
+
+    def calibration_type_changed(self):
+        self.navigation.item(7).setText('校准 MUT' if self.owner.calibration_type == 'vmc' else '校准 DUT')
+        self.navigate(self.navigation.currentRow())
 
     def remember(self):
         if self.calibration is not None:

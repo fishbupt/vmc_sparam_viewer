@@ -41,6 +41,30 @@ with tempfile.TemporaryDirectory() as tmp:
     assert window.workspace.stack.currentIndex() == 0
     assert window.workspace.calibration is None  # No project is required at startup.
     assert not window.log.isVisible()
+    # A menu and the visible selector must agree; unfinished types expose no VMC controls.
+    window.type_actions['solt'].trigger()
+    assert window.calibration_type == 'solt'
+    assert window.type_selector.currentData() == 'solt'
+    assert window.workspace.stack.currentIndex() == 0
+    assert window.workspace.calibration is None
+    for page in (1, 2, 3, 4, 5):
+        window.workspace.show_page(page)
+        assert window.workspace.stack.currentWidget() is window.workspace.placeholder
+        assert window.workspace.actions.count() == 0
+    assert window.workspace.heading.text() == '校准 DUT'
+    for key in window.type_actions:
+        if key == 'vmc':
+            continue
+        window.choose_calibration_type(key)
+        window.workspace.show_page(4)
+        assert window.workspace.stack.currentWidget() is window.workspace.placeholder
+        assert window.workspace.calibration is None
+        assert window.type_actions[key].isChecked()
+    window.choose_calibration_type('vmc')
+    assert window.workspace.calibration is not None
+    window.workspace.show_page(5)
+    assert window.workspace.heading.text() == '校准 MUT'
+    window.workspace.show_page(0)
     f = np.array([10e9, 11e9, 12e9])
     for n, value in enumerate((.1, .2, .3)):
         window.add_dataset(Dataset(f'file{n}.s2p', 'S2P / test',
@@ -73,6 +97,11 @@ with tempfile.TemporaryDirectory() as tmp:
     window.workspace.show_page(1)
     cal = window.workspace.calibration
     cal.spins['lo_hz'].setValue(19)
+    window.choose_calibration_type('trl')
+    window.workspace.show_page(4)
+    assert window.workspace.stack.currentWidget() is window.workspace.placeholder
+    window.choose_calibration_type('vmc')
+    assert window.workspace.calibration is cal and cal.spins['lo_hz'].value() == 19
     for page in (2, 3, 4, 5):
         window.workspace.show_page(page)
         assert window.workspace.calibration is cal
@@ -89,6 +118,10 @@ with tempfile.TemporaryDirectory() as tmp:
     sim.parameters['points'][0].setValue(11)
     sim.compute()
     assert window.busy()
+    window.type_actions['solt'].trigger()
+    assert window.calibration_type == 'vmc' and window.type_actions['vmc'].isChecked()
+    window.type_selector.setCurrentIndex(window.type_selector.findData('trl'))
+    assert window.type_selector.currentData() == 'vmc'
     window.close()
     assert window.isVisible()  # Never destroy a page while its thread runs.
     wait(sim)
@@ -154,4 +187,16 @@ with tempfile.TemporaryDirectory() as tmp:
         app.processEvents()
         window.grab().save(str(target / 'workbench_solver.png'))
     window.close()
+    window.choose_calibration_type('solt')
+    restored = main.Window()
+    assert restored.type_selector.currentData() == 'solt'
+    assert restored.workspace.stack.currentIndex() == 0
+    restored.workspace.show_page(1)
+    assert restored.workspace.stack.currentWidget() is restored.workspace.placeholder
+    assert restored.workspace.calibration is None
+    restored.close()
+    restored.settings.setValue('calibration_type', 'unknown_future_type')
+    fallback = main.Window()
+    assert fallback.type_selector.currentData() == 'vmc'
+    fallback.close()
 print('Workbench UI passed: default / overlay / axes / shared state / threaded handoff / close guard / statistics / layout')

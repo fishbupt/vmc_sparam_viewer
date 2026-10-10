@@ -1,4 +1,4 @@
-# VNA Calibration Workbench · VNA 校准与验证工作台 · v1.8.0
+# VNA Calibration Workbench · VNA 校准与验证工作台 · v1.8.1
 
 启动默认进入 **S 参数查看与比较**，支持独立打开 S2P / Keysight Converter Sweep Data S2PX，勾选多文件叠加，以及匹配频点后的差异统计。还提供 VMC 研发流程：生成仿真数据、表征校准混频器、计算误差项和校准 MUT。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。通用 SOLT / TRL / 多端口等算法仍属于升级规划，当前文件查看器仍面向双端口数据。
 
@@ -11,6 +11,12 @@
 - [通用 VNA 校准验证功能升级清单](ToDo.md)。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
+
+## v1.8.1：校准类型选择
+
+顶栏 **校准类型** 下拉框与菜单栏 **校准类型** 菜单同步：VMC 继续使用已有流程；SMC、响应 / 增强响应、SOL、SOLT、QSOLT、SOLR、TRL、TRM、LRM / LRL、多线 TRL、功率、多端口、ECal 工作流和噪声类型均可选择，校准页面暂为空白占位，标记“待实现”。这些选项不表示新增算法已实现。
+
+切换类型保留已配置的 VMC 输入与校准包；返回 VMC 后可以继续使用。所选类型通过 QSettings 保存，启动仍默认进入独立的查看与比较页；后台任务运行期间不能切换类型。工具菜单中的显式 VMC 生成入口会同步切回 VMC。数据查看与差异统计不受类型选择影响。
 
 ## v1.8.0：默认数据查看页与工作流程导航
 
