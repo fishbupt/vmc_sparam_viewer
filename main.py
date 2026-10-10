@@ -89,12 +89,13 @@ class PasteDialog(QDialog):
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Keep the existing settings namespace so recent paths/preferences survive the rename.
         self.settings = QSettings('VNAAlgorithmTools', 'MixerSParameterViewer')
         self.datasets = []
         self.dataset = None
         self.task = None
         self.pending = []
-        self.setWindowTitle('VMC S-Parameter Viewer · 表征与 Keysight 对照')
+        self.setWindowTitle('VMC Calibration Workbench · VMC 校准与验证工作台')
         self.resize(1420, 900)
         self.setMinimumSize(1000, 700)
         self.setAcceptDrops(True)

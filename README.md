@@ -1,6 +1,15 @@
-# VMC S-Parameter Viewer · v1.6.0
+# VMC Calibration Workbench · VMC 校准与验证工作台 · v1.6.1
 
-用于查看 S2P / Keysight Converter Sweep Data S2PX，并从两轮 SOL 生成校准混频器表征。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。
+用于 VMC 算法研发与验证：生成仿真数据、表征校准混频器、计算校准误差项、校准 MUT，以及展示和比较 S2P / Keysight Converter Sweep Data S2PX。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。
+
+## 名称与使用说明
+
+- 软件名称：**VMC Calibration Workbench**。
+- 中文名称：**VMC 校准与验证工作台**。
+- Python 项目名称：`vmc-calibration-workbench`。
+- [《VMC 校准与验证工作台使用说明》](docs/vmc_calibration.md)。
+
+GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
 
 ## v1.6.0：计算 VMC 校准误差项 / 校准 MUT
 

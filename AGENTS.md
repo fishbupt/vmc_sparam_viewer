@@ -1,6 +1,8 @@
-# VMC S-Parameter Viewer 开发约定
+# VMC Calibration Workbench · VMC 校准与验证工作台 开发约定
 
 本工程用于校准混频器算法的正式验证：查看 S2P / Keysight S2PX、生成可追溯的 SOL 仿真输入、从两轮 SOL 提取表征、与真值及 Keysight 输出比较。正确性优先于界面装饰。先读 README.md、CHANGELOG.md 和相关测试，再修改。
+
+产品名称统一为 VMC Calibration Workbench / VMC 校准与验证工作台，Python 项目名为 vmc-calibration-workbench。GitHub 仓库地址仍为 fishbupt/vmc_sparam_viewer。历史验证记录保留当时版本；QSettings 的已有命名空间是兼容标识，不随产品更名而改变。
 
 ## 环境与入口
 

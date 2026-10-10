@@ -1,3 +1,9 @@
+# v1.6.1
+
+- 产品名称统一为 VMC Calibration Workbench / VMC 校准与验证工作台；更新窗口标题、README、开发约定和使用说明标题。
+- Python 项目名改为 vmc-calibration-workbench；GitHub 仓库地址与运行入口保持不变。
+- 保留既有 QSettings 命名空间，现有目录与窗口状态无需重新配置。算法与数据格式不变。
+
 # v1.6.0
 
 - 新增 vmc_calibration.py：四组 SOL、RF / IF 普通 Thru 的负载匹配 / 传输跟踪、校准混频器 ETF，以及单向 MUT 的 S11 / S22 / VC21 校准。

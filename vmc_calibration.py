@@ -19,7 +19,7 @@ from characterization import (Standard, parse_s1p, sample_standard, solve_sol,
                              SAMPLING_METHODS, INTERPOLATION_COORDINATES)
 from frequency_mapping import output_frequencies
 
-VERSION = '1.6.0'
+VERSION = '1.6.1'
 GROUPS = ('P1_RF', 'P1_IF', 'P2_RF', 'P2_IF')
 KINDS = ('OPEN', 'SHORT', 'LOAD')
 AXIS_MODES = {'dual': '双频段复制（RF / IF 不重叠）',
