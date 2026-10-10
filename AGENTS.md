@@ -1,8 +1,8 @@
-# VMC Calibration Workbench · VMC 校准与验证工作台 开发约定
+# VNA Calibration Workbench · VNA 校准与验证工作台 开发约定
 
 本工程用于校准混频器算法的正式验证：查看 S2P / Keysight S2PX、生成可追溯的 SOL 仿真输入、从两轮 SOL 提取表征、与真值及 Keysight 输出比较。正确性优先于界面装饰。先读 README.md、CHANGELOG.md 和相关测试，再修改。
 
-产品名称统一为 VMC Calibration Workbench / VMC 校准与验证工作台，Python 项目名为 vmc-calibration-workbench。GitHub 仓库地址仍为 fishbupt/vmc_sparam_viewer。历史验证记录保留当时版本；QSettings 的已有命名空间是兼容标识，不随产品更名而改变。
+产品名称统一为 VNA Calibration Workbench / VNA 校准与验证工作台，Python 项目名为 vna-calibration-workbench。通用算法按 ToDo.md 规划，不因名称变化而宣称已支持。GitHub 仓库地址仍为 fishbupt/vmc_sparam_viewer。历史验证记录保留当时版本；QSettings 的已有命名空间是兼容标识，不随产品更名而改变。
 
 ## 环境与入口
 
@@ -24,6 +24,7 @@
 | parser.py | Dataset、Touchstone / S2PX 解析、数据变换 |
 | comparison.py | 唯一频率匹配、复数 / 幅度 / 相位差、统计与导出 |
 | main.py | 主窗口、查看与绘图、功能入口 |
+| viewer_gui.py / workbench_gui.py | 默认查看页布局、固定流程导航与共享 VMC 页面适配；不复制算法 |
 | characterize_gui.py / simulate_gui.py / compare_gui.py | 参数收集、QThread 调用、结果展示与交互 |
 | tests/ | 数值、文件回归；独立的 Qt offscreen 联动检查 |
 | examples/ | 已注明来源及限制的演示 / Keysight 回归输入 |
@@ -62,6 +63,7 @@ uv run python tests/gui_simulation_smoke.py
 uv run python tests/gui_vmc_calibration_smoke.py
 uv run python tests/gui_viewer_display_smoke.py
 uv run python tests/gui_vmc_simulation_smoke.py
+uv run python tests/gui_workbench_smoke.py
 ```
 
 算法 / 映射修改需覆盖上下变频、两种插值、两种幅相插值跨 ±180° / 多圈解缠绕、样条幅相多项式解析恢复与负幅度拒绝、线性幅度而非 dB、零幅度相位拒绝、精确节点原值保留、非理想标准、无噪声闭环、原始 / 已修正第二轮、输出轴 / 注释 / JSON 一致性、外推拒绝及独立正向波量方程。不要仅以生成器和提取器相互吻合作为正确性依据。
@@ -88,3 +90,12 @@ GUI 检查控件只有两种插值、方向改变后的结果失效、生成到�
 - 默认理想 SOL + Flush 零延迟/损耗；定义文件、raw 文件和真值文件严格区分。导入实际定义按同一幅相插值求值、禁止外推、阻抗一致，不更改原校准算法。
 - MUT 固定 S12 真值为零，cal mixer 模型互易；单程 t 与 ERF=t² 区分，端口盒按实际 RF/IF 频率计算。默认同盒无噪声 SOL 两端口相等；独立盒/噪声允许不同。
 - 输入文件只读一次，解析/归档副本/哈希来自同一字节快照。运行目录原子发布，失败清理暂存目录，不覆盖旧运行；保存无噪声真值、clean/raw、频率映射与参数/哈希。
+
+## 主界面导航约定（v1.8.0）
+
+- 默认进入查看与比较，无需先建项目。固定流程导航与数据侧栏分离，校准导航共享同一个 VMC 输入 / 校准实例；不因换页重复求解或使结果失效。
+- 双端口曲线位置为 S11 / S21 在上、S12 / S22 在下；`Window.axes` 数组仍按 PARAMS 顺序，避免破坏菜单、Y 轴和导出索引。
+- 勾选控制叠加，选中控制表格 / 元数据 / 导出；颜色按数据集固定。叠加不匹配或插值，各文件的横轴 / 分段设置独立，必须提示确认 RF / IF 含义。
+- 验证报告复用 CompareDialog 的数值计算与导出，不能绕过 A 的 StimulusFreq 约束。通用算法、项目文件与自动容差判定尚未实现。
+- 底部日志汇总嵌入式工作流；关闭时检查所有页面后台线程。保留独立对话框用法和已有脚本联动。
+- 本版 GUI / 包版本 1.8.0，算法及其报告版本保持 1.7.0；不因纯界面改动篡改历史算法可追溯性。

@@ -17,8 +17,11 @@ from vmc_simulation import VMCSimulationOptions,MixerModel,PortModel,generate_vm
 class VMCSimulationDialog(QDialog):
     generated=pyqtSignal(object)
 
-    def __init__(self,parent=None):
+    def __init__(self,parent=None,embedded=False):
         super().__init__(parent)
+        self.embedded=embedded
+        self.workbench_owner=parent if embedded else None
+        if embedded:self.setWindowFlags(Qt.WindowType.Widget)
         self.setWindowTitle('生成 VMC 原始测量 SNP · Dummy DUT')
         self.resize(1380,920);self.setMinimumSize(1000,700)
         self.settings=QSettings('VNAAlgorithmTools','VMCDummySimulation')
@@ -92,6 +95,7 @@ class VMCSimulationDialog(QDialog):
         self.calibrate_btn=QPushButton('将本轮文件载入 VMC 校准窗口');self.calibrate_btn.clicked.connect(self.open_calibration);self.calibrate_btn.setEnabled(False);actions.addWidget(self.calibrate_btn)
         self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.hide();actions.addWidget(self.progress)
         close=QPushButton('关闭');close.clicked.connect(self.reject);actions.addWidget(close)
+        if embedded:close.hide();self.setMinimumSize(0,0)
         for c in (self.import_sol,self.import_thru,self.import_cal,self.noise,self.separate_port2):c.toggled.connect(self.update_controls)
         self.update_mapping();self.update_controls()
 
@@ -214,10 +218,13 @@ class VMCSimulationDialog(QDialog):
 
     def open_calibration(self):
         if not self.result or self.worker:return
+        if self.embedded:
+            self.workbench_owner.workspace.use_generated_files(self.result);return
         from vmc_calibration_gui import VMCCalibrationDialog
         dialog=VMCCalibrationDialog(self);dialog.set_generated_files(self.result);dialog.generated.connect(self.generated.emit);dialog.exec()
 
     def reject(self):
+        if self.embedded:return
         if not self.worker:super().reject()
     def closeEvent(self,event):
         if self.worker:event.ignore()

@@ -4,20 +4,18 @@ import sys
 import traceback
 from pathlib import Path
 import numpy as np
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QAbstractTableModel, QSettings
-from PyQt6.QtGui import QAction, QActionGroup, QCursor
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QAbstractTableModel, QSettings, QTimer
+from PyQt6.QtGui import QAction, QActionGroup, QCursor, QColor
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
-    QPushButton, QListWidget, QComboBox, QLabel, QSplitter, QTabWidget,
-    QTextEdit, QPlainTextEdit, QFileDialog, QMessageBox, QDialog, QDialogButtonBox,
-    QTableView, QProgressBar, QGroupBox, QLineEdit, QMenu)
-from matplotlib.figure import Figure
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QFormLayout,
+    QPushButton, QComboBox, QLabel, QPlainTextEdit, QFileDialog, QMessageBox,
+    QDialog, QDialogButtonBox, QProgressBar, QLineEdit, QMenu, QListWidgetItem)
 from parser import PARAMS, load_file, parse_text, table_data, export_csv, values, runs
 
 MODES = {'幅度 (dB)': 'dB', '线性幅度': 'Magnitude', '相位 (°)': 'Phase',
          '解缠绕相位 (°)': 'Unwrapped', '实部': 'Real', '虚部': 'Imag'}
 COLORS = {'S11': '#2563eb', 'S12': '#d97706', 'S21': '#059669', 'S22': '#7c3aed'}
+DATA_COLORS = ('#2563eb', '#d97706', '#059669', '#7c3aed', '#dc2626', '#0891b2')
 STYLE = '''
 QMainWindow, QDialog { background: #f3f6fa; }
 QWidget { font-family: "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI"; font-size: 10pt; color: #24344a; }
@@ -35,6 +33,10 @@ QTabBar::tab { padding: 9px 16px; background: #e9eef5; }
 QTabBar::tab:selected { background: white; color: #2563eb; }
 QMenuBar, QMenu { background: white; color: #24344a; }
 QMenu::item:selected { background: #dbeafe; }
+QListWidget#workflowNavigation, QWidget#viewerSidebar { background: white; border: 1px solid #dce3ec; }
+QListWidget#workflowNavigation::item { padding: 12px 8px; }
+QListWidget#workflowNavigation::item:selected { background: #e7effd; color: #2563eb; }
+QListWidget#workflowNavigation::item:disabled { color: #64748b; padding-top: 15px; font-size: 9pt; }
 QHeaderView::section { background: #edf2f8; padding: 6px; border: 0; border-right: 1px solid #dce3ec; }
 '''
 
@@ -157,7 +159,9 @@ class Window(QMainWindow):
         self.task = None
         self.pending = []
         self.y_limits = {}
-        self.setWindowTitle('VMC Calibration Workbench · VMC 校准与验证工作台')
+        self.file_serial = 0
+        self.view_options = {}
+        self.setWindowTitle('VNA Calibration Workbench · VNA 校准与验证工作台')
         self.resize(1420, 900)
         self.setMinimumSize(1000, 700)
         self.setAcceptDrops(True)
@@ -168,134 +172,88 @@ class Window(QMainWindow):
 
     def build(self):
         menu = self.menuBar().addMenu('文件')
-        for title, shortcut, slot in [('打开文件…', 'Ctrl+O', self.open_files), ('粘贴文本…', 'Ctrl+Shift+V', self.paste), ('导出 CSV…', 'Ctrl+E', self.export)]:
+        for title, shortcut, slot in [('打开文件…', 'Ctrl+O', self.open_files),
+                                     ('粘贴文本…', 'Ctrl+Shift+V', self.paste),
+                                     ('导出 CSV…', 'Ctrl+E', self.export)]:
             action = QAction(title, self)
             action.setShortcut(shortcut)
             action.triggered.connect(slot)
             menu.addAction(action)
+        view_menu = self.menuBar().addMenu('视图')
+        view_menu.addAction('查看与比较', lambda: self.workspace.show_page(0))
+        tools = self.menuBar().addMenu('工具')
+        tools.addAction('两轮 SOL 表征…', self.characterize_mixer)
+        tools.addAction('生成两轮 SOL 仿真…', self.simulate_sol)
+        tools.addAction('生成 VMC 原始测量 SNP', self.simulate_vmc)
         root = QWidget()
         self.setCentralWidget(root)
         layout = QVBoxLayout(root)
-        title = QLabel('MIXER  /  S-PARAMETER VIEWER')
-        title.setStyleSheet('font-size: 19pt; font-weight: bold; padding: 5px;')
+        title = QLabel('VNA Calibration Workbench · VNA 校准与验证工作台')
+        title.setStyleSheet('font-size: 18pt; font-weight: bold; padding: 5px;')
         layout.addWidget(title)
-        subtitle = QLabel('校准混频器表征文件  ·  S2P / S2PX  ·  复数数据与频率映射')
-        subtitle.setStyleSheet('color: #64748b; padding: 0 5px 8px;')
-        layout.addWidget(subtitle)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        layout.addWidget(splitter, 1)
-        left = QWidget()
-        left.setMinimumWidth(250)
-        left.setMaximumWidth(440)
-        side = QVBoxLayout(left)
-        side.setContentsMargins(0, 0, 10, 0)
-        self.open_btn = QPushButton('打开 S2P / S2PX')
-        self.open_btn.setObjectName('primary')
-        self.open_btn.clicked.connect(self.open_files)
-        self.paste_btn = QPushButton('粘贴文件内容')
-        self.paste_btn.clicked.connect(self.paste)
-        compare_btn = QPushButton('比较同名 S2P / S2PX')
-        compare_btn.clicked.connect(self.compare_files)
-        side.addWidget(self.open_btn)
-        side.addWidget(self.paste_btn)
-        side.addWidget(compare_btn)
-        any_compare = QPushButton('比较任意两份表征文件')
-        any_compare.clicked.connect(self.compare_any_files)
-        side.addWidget(any_compare)
-        characterize_btn = QPushButton('两轮 SOL → 校准混频器表征')
-        characterize_btn.setObjectName('primary')
-        characterize_btn.clicked.connect(self.characterize_mixer)
-        side.addWidget(characterize_btn)
-        simulation_btn = QPushButton('生成 SOL 仿真文件 / Mixer 真值')
-        simulation_btn.clicked.connect(self.simulate_sol)
-        side.addWidget(simulation_btn)
-        vmc_btn = QPushButton('VMC 校准误差项 / 校准 MUT')
-        vmc_btn.clicked.connect(self.calibrate_vmc)
-        side.addWidget(vmc_btn)
-        vmc_sim_btn = QPushButton('生成 VMC 原始测量 SNP')
-        vmc_sim_btn.clicked.connect(self.simulate_vmc)
-        side.addWidget(vmc_sim_btn)
-        self.files = QListWidget()
-        self.files.currentRowChanged.connect(self.select)
-        side.addWidget(self.files, 1)
-        remove = QPushButton('移除选中文件')
-        remove.clicked.connect(self.remove)
-        side.addWidget(remove)
-        group = QGroupBox('绘图设置')
-        form = QFormLayout(group)
-        self.mode = QComboBox()
-        self.mode.addItems(MODES)
-        saved_mode = self.settings.value('mode', '幅度 (dB)')
-        self.mode.setCurrentText('解缠绕相位 (°)' if saved_mode == '展开相位 (°)' else saved_mode)
-        self.axis = QComboBox()
-        self.unit = QComboBox()
-        self.unit.addItems(['GHz', 'MHz', 'kHz', 'Hz'])
-        self.segment = QComboBox()
-        self.segment.addItem('全部')
-        for label, box in [('显示', self.mode), ('横轴', self.axis), ('频率单位', self.unit), ('分段', self.segment)]:
-            form.addRow(label, box)
-            box.currentIndexChanged.connect(self.plot)
-        y_axis_btn = QPushButton('Y 轴设置…')
-        y_axis_btn.clicked.connect(lambda: self.edit_y_limits())
-        form.addRow(y_axis_btn)
-        side.addWidget(group)
-        self.export_btn = QPushButton('导出完整数据 CSV')
-        self.export_btn.clicked.connect(self.export)
-        self.export_btn.setEnabled(False)
-        side.addWidget(self.export_btn)
-        note = QLabel('保留原始点序；不插值、不补点。\n解缠绕相位按连续分段分别计算。\n右键曲线切换显示 / 设置 Y 轴。')
-        note.setWordWrap(True)
-        note.setStyleSheet('color: #64748b; padding: 8px 0;')
-        side.addWidget(note)
-        splitter.addWidget(left)
-        main = QWidget()
-        content = QVBoxLayout(main)
-        content.setContentsMargins(0, 0, 0, 0)
-        self.summary = QLabel('打开文件或粘贴数据开始查看')
-        self.summary.setWordWrap(True)
-        self.summary.setStyleSheet('background: white; border: 1px solid #dce3ec; padding: 12px; font-weight: bold;')
-        content.addWidget(self.summary)
-        self.warning = QLabel()
-        self.warning.setWordWrap(True)
-        self.warning.setStyleSheet('background: #fff7e6; color: #92400e; padding: 8px;')
-        self.warning.hide()
-        content.addWidget(self.warning)
-        self.tabs = QTabWidget()
-        content.addWidget(self.tabs, 1)
-        page = QWidget()
-        chart = QVBoxLayout(page)
-        self.figure = Figure(figsize=(9, 6), layout='constrained', facecolor='white')
-        self.canvas = FigureCanvasQTAgg(self.figure)
-        self.axes = self.figure.subplots(2, 2).ravel()
-        self.toolbar = NavigationToolbar2QT(self.canvas, self)
-        chart.addWidget(self.toolbar)
-        chart.addWidget(self.canvas, 1)
-        self.canvas.mpl_connect('motion_notify_event', self.hover)
-        self.canvas.mpl_connect('button_press_event', self.plot_context_menu)
-        self.tabs.addTab(page, 'S 参数 · 2 × 2')
-        self.table = QTableView()
-        self.table.setAlternatingRowColors(True)
-        self.tabs.addTab(self.table, '数据表')
-        self.meta = QPlainTextEdit()
-        self.meta.setReadOnly(True)
-        self.tabs.addTab(self.meta, '文件信息 / Mixer 配置')
-        self.raw = QPlainTextEdit()
-        self.raw.setReadOnly(True)
-        self.tabs.addTab(self.raw, '原始文本')
-        splitter.addWidget(main)
-        splitter.setSizes([280, 1100])
+        context = QLabel('S 参数查看与比较 · 无需创建项目    |    校准工作流程：VMC（其他算法见升级规划）')
+        context.setStyleSheet('color: #64748b; padding: 0 5px 8px;')
+        layout.addWidget(context)
+        from viewer_gui import build_viewer
+        from workbench_gui import WorkbenchPages
+        self.workspace = WorkbenchPages(self, build_viewer(self, MODES))
+        layout.addWidget(self.workspace, 1)
+        self.log_toggle = QPushButton('日志与数据诊断 ▸')
+        self.log_toggle.setCheckable(True)
+        self.log_toggle.toggled.connect(self.toggle_log)
+        layout.addWidget(self.log_toggle)
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
-        self.log.setMaximumHeight(90)
+        self.log.setMaximumHeight(110)
         self.log.setPlaceholderText('读取记录与详细错误')
+        self.log.hide()
         layout.addWidget(self.log)
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(160)
         self.progress.setRange(0, 0)
         self.progress.hide()
         self.statusBar().addPermanentWidget(self.progress)
-        self.statusBar().showMessage('就绪 · 支持拖入文件')
+        self.statusBar().showMessage('就绪 · 支持拖入文件 · 启动默认显示查看与比较')
+        self.activity_timer = QTimer(self)
+        self.activity_timer.timeout.connect(self.refresh_activity)
+        self.activity_timer.start(150)
         self.plot()
+
+    def refresh_activity(self):
+        active = self.busy()
+        self.progress.setVisible(active)
+        self.open_btn.setEnabled(not active)
+        self.paste_btn.setEnabled(not active)
+        self.export_btn.setEnabled(self.dataset is not None and not active)
+        self.workspace.refresh_actions()
+        if self.pending and not active:
+            self.read_next()
+
+    def toggle_log(self, visible):
+        self.log.setVisible(visible)
+        self.log_toggle.setText('日志与数据诊断 ▾' if visible else '日志与数据诊断 ▸')
+
+    def merge_page_log(self, page):
+        previous = ['']
+        def changed():
+            current = page.log.toPlainText()
+            extra = current[len(previous[0]):] if current.startswith(previous[0]) else current
+            previous[0] = current
+            if extra.strip():
+                self.log.appendPlainText(f'[{page.windowTitle()}] ' + extra.strip())
+        page.log.textChanged.connect(changed)
+
+    def change_y_scale(self, index):
+        if index == 0:
+            self.set_y_limits(None, None)
+        else:
+            self.edit_y_limits()
+        self.update_y_scale()
+
+    def update_y_scale(self):
+        mode = MODES[self.mode.currentText()]
+        manual = any((mode, p) in self.y_limits for p in PARAMS)
+        self.y_scale.setCurrentIndex(1 if manual else 0)
 
     def compare_files(self):
         if self.busy():
@@ -307,22 +265,13 @@ class Window(QMainWindow):
     def compare_any_files(self):
         if self.busy():
             return
-        from compare_gui import CompareDialog
-        CompareDialog(self.datasets, self, general=True).exec()
+        self.workspace.show_page(6)
 
     def calibrate_vmc(self):
-        from vmc_calibration_gui import VMCCalibrationDialog
-        dialog = VMCCalibrationDialog(self)
-        dialog.generated.connect(self.add_dataset)
-        dialog.exec()
+        self.workspace.show_page(4)
 
     def simulate_vmc(self):
-        if self.busy():
-            return
-        from vmc_simulation_gui import VMCSimulationDialog
-        dialog = VMCSimulationDialog(self)
-        dialog.generated.connect(self.add_dataset)
-        dialog.exec()
+        self.workspace.show_simulation()
 
     def simulate_sol(self):
         if self.busy():
@@ -341,7 +290,7 @@ class Window(QMainWindow):
         dialog.exec()
 
     def busy(self):
-        return self.task is not None
+        return self.task is not None or (hasattr(self, "workspace") and self.workspace.busy())
 
     def start_task(self, fn, args, callback):
         if self.busy():
@@ -369,12 +318,13 @@ class Window(QMainWindow):
 
     def error(self, message, trace):
         self.log.appendPlainText(trace)
+        self.log_toggle.setChecked(True)
         QMessageBox.warning(self, '操作未完成', message)
 
     def open_files(self):
         if self.busy():
             return
-        paths, _ = QFileDialog.getOpenFileNames(self, '打开混频器表征文件', self.settings.value('directory', ''),
+        paths, _ = QFileDialog.getOpenFileNames(self, '打开 S 参数 / 混频器表征文件', self.settings.value('directory', ''),
                     'Mixer 文件 (*.s2p *.S2P *.s2px *.S2PX *.csv);;所有文件 (*)')
         self.load_paths(paths)
 
@@ -386,6 +336,8 @@ class Window(QMainWindow):
             self.read_next()
 
     def read_next(self):
+        if not self.pending or self.busy():
+            return
         path = self.pending.pop(0)
         self.settings.setValue('directory', str(Path(path).parent))
         self.statusBar().showMessage(f'正在读取 {Path(path).name}')
@@ -400,9 +352,16 @@ class Window(QMainWindow):
 
     def add_dataset(self, data):
         self.datasets.append(data)
-        self.files.addItem(Path(data.name).name)
-        self.files.item(self.files.count() - 1).setToolTip(data.name)
+        item = QListWidgetItem(Path(data.name).name)
+        item.setToolTip(data.name)
+        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+        item.setCheckState(Qt.CheckState.Checked)
+        item.setData(Qt.ItemDataRole.UserRole, self.file_serial)
+        item.setForeground(QColor(DATA_COLORS[self.file_serial % len(DATA_COLORS)]))
+        self.file_serial += 1
+        self.files.addItem(item)
         self.files.setCurrentRow(len(self.datasets) - 1)
+        self.workspace.show_page(0)
         self.log.appendPlainText(f'已读取 {data.name} | {data.kind} | {data.count} 点')
         for warning in data.warnings:
             self.log.appendPlainText('提示：' + warning)
@@ -422,6 +381,10 @@ class Window(QMainWindow):
             self.axis.addItem('点序号', 'Index')
             for seg in dict.fromkeys(d.segment.tolist()):
                 self.segment.addItem(str(seg), seg)
+            serial = self.files.currentItem().data(Qt.ItemDataRole.UserRole)
+            key, chosen = self.view_options.get(serial, (next(iter(d.axes)), None))
+            self.axis.setCurrentIndex(max(0, self.axis.findData(key)))
+            self.segment.setCurrentIndex(max(0, self.segment.findData(chosen)))
             primary = next(iter(d.axes.values()))
             self.summary.setText(f'{Path(d.name).name}  |  {d.kind}  |  {d.count} 点\n'
                                  f'{next(iter(d.axes))}: {primary.min()/1e9:.9g} – {primary.max()/1e9:.9g} GHz'
@@ -451,10 +414,21 @@ class Window(QMainWindow):
         if row >= 0:
             self.files.blockSignals(True)
             self.datasets.pop(row)
-            self.files.takeItem(row)
+            item = self.files.takeItem(row)
+            self.view_options.pop(item.data(Qt.ItemDataRole.UserRole), None)
             self.files.blockSignals(False)
             self.files.setCurrentRow(min(row, len(self.datasets) - 1))
             self.select(self.files.currentRow())
+
+    def clear_files(self):
+        if self.busy():
+            return
+        self.files.blockSignals(True)
+        self.files.clear()
+        self.datasets.clear()
+        self.view_options.clear()
+        self.files.blockSignals(False)
+        self.select(-1)
 
     def set_y_limits(self, param, limits):
         mode = MODES[self.mode.currentText()]
@@ -498,51 +472,89 @@ class Window(QMainWindow):
         menu.exec(QCursor.pos())
         menu.deleteLater()
 
-    def plotting_arrays(self, param):
-        d = self.dataset
-        key = self.axis.currentData()
+    def plotting_arrays(self, param, dataset=None, option=None):
+        d = self.dataset if dataset is None else dataset
+        key, chosen = option or (self.axis.currentData(), self.segment.currentData())
         scale = {'GHz': 1e9, 'MHz': 1e6, 'kHz': 1e3, 'Hz': 1}[self.unit.currentText()]
         x = np.arange(1, d.count + 1) if key == 'Index' else d.axes[key] / scale
         y = values(d.s[param], MODES[self.mode.currentText()], d.segment)
-        chosen = self.segment.currentData()
         mask = np.ones(d.count, dtype=bool) if chosen is None else d.segment == chosen
         return x, y, mask
 
+    def plot_entries(self):
+        current = self.files.currentItem()
+        if current is not None and self.dataset is not None:
+            self.view_options[current.data(Qt.ItemDataRole.UserRole)] = (
+                self.axis.currentData(), self.segment.currentData())
+        entries = []
+        for row, data in enumerate(self.datasets):
+            item = self.files.item(row)
+            if self.overlay.currentIndex() == 1:
+                if row != self.files.currentRow():
+                    continue
+            elif item.checkState() != Qt.CheckState.Checked:
+                continue
+            serial = item.data(Qt.ItemDataRole.UserRole)
+            option = self.view_options.get(serial, (next(iter(data.axes)), None))
+            # Frequency and point index have different dimensions: never mix them.
+            if (option[0] == 'Index') != (self.axis.currentData() == 'Index'):
+                continue
+            entries.append((row, data, serial, option))
+        return entries
+
     def plot(self):
+        entries = self.plot_entries()
         for ax, p in zip(self.axes, PARAMS):
             ax.clear()
-            ax.set_title(p, loc='left', color=COLORS[p], fontsize=13, fontweight='bold')
+            title = p
+            if p == 'S21' and any('VC21' in data.auxiliary or 'VC21' in data.metadata.get('S21', '')
+                                  for _, data, _, _ in entries):
+                title = 'S21 / VC21'
+            ax.set_title(title, loc='left', color='#24344a', fontsize=13, fontweight='bold')
             ax.grid(True, color='#e7ecf3', linewidth=.7)
             ax.tick_params(labelsize=9, colors='#52647b')
             for spine in ax.spines.values():
                 spine.set_color('#dbe3ed')
-            if self.dataset and self.axis.currentData():
-                x, y, mask = self.plotting_arrays(p)
-                for run in runs(self.dataset.segment):
-                    indices = run[mask[run]]
-                    if len(indices):
-                        yp = y[indices].copy()
-                        yp[~np.isfinite(yp)] = np.nan
-                        ax.plot(x[indices], yp, color=COLORS[p], linewidth=1.6,
-                                marker='o' if len(indices) <= 100 else None, markersize=4)
+            if entries:
+                for row, data, serial, option in entries:
+                    x, y, mask = self.plotting_arrays(p, data, option)
+                    color = DATA_COLORS[serial % len(DATA_COLORS)]
+                    labeled = False
+                    for run in runs(data.segment):
+                        indices = run[mask[run]]
+                        if len(indices):
+                            yp = y[indices].copy()
+                            yp[~np.isfinite(yp)] = np.nan
+                            ax.plot(x[indices], yp, color=color, linewidth=1.6,
+                                    linestyle=('-', '--', '-.', ':')[serial % 4],
+                                    label=f'{row + 1}: {Path(data.name).name}' if not labeled else None,
+                                    marker='o' if len(indices) <= 100 else None, markersize=4)
+                            labeled = True
+                if len(entries) > 1:
+                    ax.legend(fontsize=8, loc='best')
                 key = self.axis.currentData()
-                ax.set_xlabel('Point index' if key == 'Index' else f'{key} ({self.unit.currentText()})', fontsize=9)
+                keys = list(dict.fromkeys(entry[3][0] for entry in entries))
+                ax.set_xlabel('Point index' if key == 'Index' else f'{" / ".join(keys)} ({self.unit.currentText()})', fontsize=9)
                 mode = MODES[self.mode.currentText()]
                 ax.set_ylabel({'dB': 'Magnitude (dB)', 'Magnitude': 'Magnitude (linear)', 'Phase': 'Phase (deg)',
                                'Unwrapped': 'Unwrapped phase (deg)', 'Real': 'Real', 'Imag': 'Imaginary'}[mode], fontsize=9)
                 ax.margins(x=.05)
             else:
-                ax.text(.5, .5, 'Open or paste S2P / S2PX', ha='center', va='center', transform=ax.transAxes, color='#94a3b8')
+                ax.text(.5, .5, 'Select datasets to plot' if self.datasets else 'Open or paste S2P / S2PX',
+                        ha='center', va='center', transform=ax.transAxes, color='#94a3b8')
             limits = self.y_limits.get((MODES[self.mode.currentText()], p))
             if limits is not None:
                 ax.set_ylim(*limits)
         self.toolbar.update()
+        self.update_y_scale()
         self.canvas.draw_idle()
 
     def hover(self, event):
         if not self.dataset or event.inaxes not in self.axes or event.xdata is None:
             return
         p = PARAMS[list(self.axes).index(event.inaxes)]
+        if not any(data is self.dataset for _, data, _, _ in self.plot_entries()):
+            return
         x, y, mask = self.plotting_arrays(p)
         idx = np.flatnonzero(mask)
         if len(idx):
@@ -573,6 +585,7 @@ class Window(QMainWindow):
             self.statusBar().showMessage('正在处理数据，请完成后再关闭。')
             event.ignore()
             return
+        self.workspace.remember()
         self.settings.setValue('geometry', self.saveGeometry())
         self.settings.setValue('mode', self.mode.currentText())
         super().closeEvent(event)

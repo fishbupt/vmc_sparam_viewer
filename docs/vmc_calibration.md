@@ -1,10 +1,10 @@
-# VMC 校准与验证工作台使用说明
+# VNA 校准与验证工作台 · VMC 使用说明
 
-**VMC Calibration Workbench · v1.7.0**
+**VNA Calibration Workbench · v1.8.0（VMC 数值模型 v1.7.0）**
 
 本文说明全量 VMC 校准与校准 MUT；仿真数据生成、两轮 SOL 表征与主界面展示操作见仓库 README。
 
-主界面点击 **VMC 校准误差项 / 校准 MUT**。此功能位于 `vmc_calibration.py`，GUI 位于 `vmc_calibration_gui.py`。原有两轮 SOL 的 `characterization.py` 仍负责表征校准混频器。
+主界面默认为 **查看与比较**。通过左侧 **项目配置 / 标准件定义 / 原始测量 / 校准求解 / 校准 MUT** 进入对应页面，输入与校准状态共享。此功能位于 `vmc_calibration.py`，GUI 位于 `vmc_calibration_gui.py`，页面导航由 `workbench_gui.py` 管理。原有两轮 SOL 的 `characterization.py` 仍负责表征校准混频器，可从标准件页或工具菜单打开。
 
 窗口左侧为 VMC / MUT 配置与校准操作：RF、LO、方向和自动显示的 IF 起止频率、标准插值、文件横轴、校准包与误差项。右侧“计算 VMC 校准误差项”页按 **标准件定义（OPEN / SHORT / LOAD / THRU）→ 原始测量（OPEN / SHORT / LOAD / THRU / CalTHRU）→ 已表征校准混频器** 排列。左右可拖动调整宽度，各自独立滚动；“校准 MUT”页仅放 MUT 文件与执行 / 导出操作，共享左侧配置。
 

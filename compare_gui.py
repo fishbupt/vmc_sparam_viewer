@@ -1,7 +1,7 @@
 from pathlib import Path
 import traceback
 import numpy as np
-from PyQt6.QtCore import QThread, pyqtSignal
+from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from PyQt6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QLabel,QComboBox,QDoubleSpinBox,
  QPushButton,QTableWidget,QTableWidgetItem,QFileDialog,QMessageBox,QTabWidget,QWidget,QAbstractItemView)
 from matplotlib.figure import Figure
@@ -28,11 +28,12 @@ class CompareDialog(QDialog):
         self.result=None; self.worker=None
         self.pairs=[]
         for a in datasets:
-            if not a.kind.startswith('S2P /'): continue
+            if 'StimulusFreq' not in a.axes: continue
+            if not a.kind.startswith('S2P /') and not (general and 'StimulusFreq' in a.axes): continue
             for b in datasets:
                 if a is b: continue
                 if general:
-                    if b.kind.startswith(('S2P /', 'S2PX')): self.pairs.append((a,b))
+                    if b.axes: self.pairs.append((a,b))
                 elif b.kind.startswith('S2PX') and Path(a.name).stem.casefold()==Path(b.name).stem.casefold():
                     self.pairs.append((a,b))
         box=QVBoxLayout(self)
@@ -53,7 +54,7 @@ class CompareDialog(QDialog):
         self.summary.setWordWrap(True); box.addWidget(self.summary)
         self.tabs=QTabWidget(); box.addWidget(self.tabs,1)
         chart=QWidget(); layout=QVBoxLayout(chart)
-        self.fig=Figure(layout='constrained',facecolor='white'); self.axes=self.fig.subplots(2,2).ravel()
+        self.fig=Figure(layout='constrained',facecolor='white'); self.axes=self.fig.subplots(2,2).ravel()[[0,2,1,3]]
         self.canvas=FigureCanvasQTAgg(self.fig); self.toolbar=NavigationToolbar2QT(self.canvas,self)
         layout.addWidget(self.toolbar); layout.addWidget(self.canvas)
         self.tabs.addTab(chart,'差异曲线 / 叠加')
@@ -154,6 +155,7 @@ class CompareDialog(QDialog):
             self.begin(export_comparison,(self.result,path),lambda _: self.summary.setText('差异已导出：'+path))
 
     def reject(self):
+        if self.windowType()==Qt.WindowType.Widget:return
         if not self.worker: super().reject()
     def closeEvent(self,event):
         if self.worker: event.ignore()

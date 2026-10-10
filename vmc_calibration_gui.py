@@ -15,8 +15,10 @@ from vmc_calibration import (GROUPS,KINDS,AXIS_MODES,CalibrationOptions,Calibrat
 class VMCCalibrationDialog(QDialog):
     generated=pyqtSignal(object)
 
-    def __init__(self,parent=None):
+    def __init__(self,parent=None,embedded=False):
         super().__init__(parent)
+        self.embedded=embedded
+        if embedded:self.setWindowFlags(Qt.WindowType.Widget)
         self.setWindowTitle('VMC 全量校准 · 计算误差项 / 校准 MUT');self.resize(1320,940)
         self.setMinimumSize(1000,700)
         self.setStyleSheet('QPushButton#fileBrowse { padding: 3px 8px; } '
@@ -57,6 +59,7 @@ class VMCCalibrationDialog(QDialog):
         self.mapping_label=QLabel();self.mapping_label.setWordWrap(True);form.addRow('RF → IF',self.mapping_label)
         self.update_mapping()
         mut_config=QGroupBox('MUT 配置 / 当前校准');form=QFormLayout(mut_config);config_layout.addWidget(mut_config)
+        self.mut_config_group=mut_config
         self.mut_axis=QComboBox()
         for key,label in AXIS_MODES.items():self.mut_axis.addItem(label,key)
         self.mut_axis.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -65,6 +68,7 @@ class VMCCalibrationDialog(QDialog):
         self.mut_axis.currentIndexChanged.connect(self.invalidate_mut);form.addRow('MUT 文件横轴',self.mut_axis);self.controls.append(self.mut_axis)
         self.cal_state=QLabel('尚无校准包，请先计算或载入。');self.cal_state.setWordWrap(True);form.addRow(self.cal_state)
         actions=QGroupBox('校准操作');al=QVBoxLayout(actions);config_layout.addWidget(actions)
+        self.action_group=actions
         self.compute_btn=QPushButton('计算 VMC 校准误差项');self.compute_btn.setObjectName('primary');self.compute_btn.clicked.connect(self.compute);al.addWidget(self.compute_btn)
         row=QHBoxLayout();al.addLayout(row)
         self.save_btn=QPushButton('保存校准包…');self.save_btn.clicked.connect(self.save);row.addWidget(self.save_btn)
@@ -123,13 +127,36 @@ class VMCCalibrationDialog(QDialog):
         self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.hide();layout.addWidget(self.progress)
         self.log=QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumHeight(85);layout.addWidget(self.log)
         close=QPushButton('关闭');close.clicked.connect(self.reject);layout.addWidget(close)
+        if embedded:
+            intro.hide();close.hide();self.setMinimumSize(0,0)
+            self.config_scroll.setMinimumWidth(260);self.tabs.setMinimumWidth(380)
+            self.tabs.tabBar().hide()
+            project=QWidget();project_layout=QVBoxLayout(project)
+            project_info=QLabel('当前算法：VMC（单向 MUT 模型）\n\n'
+                '左侧配置 RF / 固定 LO / 派生 IF、阻抗、采样和频率轴。\n'
+                '这些配置、标准件路径和当前校准包由各工作流程页面共享。\n\n'
+                '标准件定义 → 原始测量 → 校准求解 → 校准 MUT。\n'
+                '现有参数通过 QSettings 记录；校准包可保存为 ZIP。\n\n'
+                'SOLT / TRL / 多端口等通用算法与项目文件保存仍见 ToDo.md，未在本版实现。')
+            project_info.setWordWrap(True);project_layout.addWidget(project_info);project_layout.addStretch()
+            self.tabs.addTab(project,'项目配置')
         self.refresh_buttons()
+
+    def set_workspace_section(self,section):
+        """Navigation changes visibility only; inputs and calibrated state stay shared."""
+        self.standard_group.setVisible(section in ('standards','solve'))
+        self.measurement_group.setVisible(section in ('raw','solve'))
+        self.mixer_group.setVisible(section in ('standards','solve'))
+        self.action_group.setVisible(section in ('solve','mut'))
+        self.compute_btn.setVisible(section=='solve' and not self.embedded)
+        self.mut_config_group.setVisible(section=='mut')
+        self.tabs.setCurrentIndex(2 if section=='project' else 1 if section=='mut' else 0)
 
     def path_field(self,form,key,label,mut=False):
         container=QWidget();row=QHBoxLayout(container);row.setContentsMargins(0,0,0,0)
         field=QLineEdit(str(self.settings.value('path/'+key,'')));button=QPushButton('浏览…')
         button.setObjectName('fileBrowse')
-        title=QLabel(label);title.setMinimumWidth(170)
+        title=QLabel(label);title.setMinimumWidth(110 if self.embedded else 170);title.setWordWrap(self.embedded)
         row.addWidget(field,1);row.addWidget(button);form.addRow(title,container)
         field.setToolTip(label);self.file_rows[key]=container
         button.clicked.connect(lambda checked=False,e=field:self.browse(e))
@@ -322,6 +349,7 @@ class VMCCalibrationDialog(QDialog):
     def suffix(path):return path if path.lower().endswith('.zip') else path+'.zip'
 
     def reject(self):
+        if self.embedded:return
         if self.worker:return
         self.remember();super().reject()
 

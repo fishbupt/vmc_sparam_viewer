@@ -18,7 +18,8 @@ with tempfile.TemporaryDirectory() as tmp:
  characterize_gui.QSettings=lambda *a:QSettings(tmp+'/characterize.ini',QSettings.Format.IniFormat)
  errors=[];QMessageBox.warning=lambda *a:errors.append(a[2])
  main=Window();dialog=SimulationDialog(main);dialog.generated.connect(main.add_dataset)
- assert any('生成 SOL' in b.text() for b in main.findChildren(QPushButton))
+ main.workspace.show_page(3)
+ assert any('生成两轮 SOL' in b.text() for b in main.findChildren(QPushButton))
  kit=Path(__file__).resolve().parents[1]/'examples/keysight_validation'
  for e,n in zip(dialog.standards,['open.s1p','short_validation_band.s1p','load.s1p']):e.setText(str(kit/n))
  dialog.directory.setText(tmp);dialog.show();dialog.compute()

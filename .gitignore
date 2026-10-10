@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .venv/
+.venv-*/
 venv/
 
 # PyCharm / JetBrains project metadata (including legacy project files)
