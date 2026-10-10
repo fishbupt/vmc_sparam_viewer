@@ -146,6 +146,9 @@ class Window(QMainWindow):
         simulation_btn = QPushButton('生成 SOL 仿真文件 / Mixer 真值')
         simulation_btn.clicked.connect(self.simulate_sol)
         side.addWidget(simulation_btn)
+        vmc_btn = QPushButton('VMC 校准误差项 / 校准 MUT')
+        vmc_btn.clicked.connect(self.calibrate_vmc)
+        side.addWidget(vmc_btn)
         self.files = QListWidget()
         self.files.currentRowChanged.connect(self.select)
         side.addWidget(self.files, 1)
@@ -235,6 +238,12 @@ class Window(QMainWindow):
             return
         from compare_gui import CompareDialog
         CompareDialog(self.datasets, self, general=True).exec()
+
+    def calibrate_vmc(self):
+        from vmc_calibration_gui import VMCCalibrationDialog
+        dialog = VMCCalibrationDialog(self)
+        dialog.generated.connect(self.add_dataset)
+        dialog.exec()
 
     def simulate_sol(self):
         if self.busy():

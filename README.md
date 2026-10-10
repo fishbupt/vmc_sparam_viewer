@@ -1,6 +1,19 @@
-# VMC S-Parameter Viewer · v1.5.2
+# VMC S-Parameter Viewer · v1.6.0
 
 用于查看 S2P / Keysight Converter Sweep Data S2PX，并从两轮 SOL 生成校准混频器表征。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。
+
+## v1.6.0：计算 VMC 校准误差项 / 校准 MUT
+
+主界面新增 **VMC 校准误差项 / 校准 MUT** 入口，包含两个页签：
+
+- **计算 VMC 校准误差项**：四组端口 / 频段 SOL，普通 RF / IF Thru，校准混频器 RF→IF Thru，共 21 个误差项；误差项可载入主界面，复用已有幅度 / 相位视图。
+- **校准 MUT**：计算 S11、S22、VC21，将原始 MUT 与校准结果同时载入主界面；无新增对比页面。本次不修改主界面相位比较功能。
+
+支持共用三个 SOL S2P 或 12 组独立 S1P / S2P，两端口共用或独立标准定义，理想 Flush 或已定义 Thru。标准插值维持幅相线性 / 幅相三次样条；原始测量只精确匹配，不插值。
+
+校准包包含 JSON 配置 / 输入映射 / SHA256 和复数误差项，可保存后独立重载，无需原始标准文件；MUT 结果包含 S2P、VC21 复数 CSV、原始数据、RF / IF / LO 映射和报告。**MUT 按单向 / 忽略反向耦合公式校准；S12 未校准，S2P 中的零值仅为明确标记的占位。** 本轮假设传输泄漏为零，未独立采集接收器 / 开关项。
+
+详细操作、公式和输入要求见 [docs/vmc_calibration.md](docs/vmc_calibration.md)，验证记录见 [docs/validation_v1.6.0.md](docs/validation_v1.6.0.md)。
 
 ## v1.5.2 更新：两种插值均采用幅度 / 解缠绕相位
 

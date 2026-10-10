@@ -16,6 +16,8 @@
 | frequency_mapping.py | 生成、表征共用的 RF / LO / IF 映射及验证 |
 | characterization.py | 标准解析 / 求值、SOL 求解、输入误差消除、连续开方、结果与诊断导出 |
 | simulation.py | 独立正向模型、可复现噪声、真值及六个测量文件生成 |
+| vmc_calibration.py | 四组 SOL / 两频段普通 Thru / 变频 ETF 求解，单向 MUT 校准，校准包与结果导出 |
+| vmc_calibration_gui.py | 两页签：计算 VMC 校准误差项 / 校准 MUT；QThread 调用与主界面联动 |
 | parser.py | Dataset、Touchstone / S2PX 解析、数据变换 |
 | comparison.py | 唯一频率匹配、复数 / 幅度 / 相位差、统计与导出 |
 | main.py | 主窗口、查看与绘图、功能入口 |
@@ -54,6 +56,7 @@ GUI 不得复制另一套算法公式。耗时计算和文件 I/O 继续放到�
 ```text
 uv run python -m unittest discover -s tests -v
 uv run python tests/gui_simulation_smoke.py
+uv run python tests/gui_vmc_calibration_smoke.py
 ```
 
 算法 / 映射修改需覆盖上下变频、两种插值、两种幅相插值跨 ±180° / 多圈解缠绕、样条幅相多项式解析恢复与负幅度拒绝、线性幅度而非 dB、零幅度相位拒绝、精确节点原值保留、非理想标准、无噪声闭环、原始 / 已修正第二轮、输出轴 / 注释 / JSON 一致性、外推拒绝及独立正向波量方程。不要仅以生成器和提取器相互吻合作为正确性依据。
@@ -61,3 +64,13 @@ uv run python tests/gui_simulation_smoke.py
 GUI 检查控件只有两种插值、方向改变后的结果失效、生成到表征方向联动、设置保存 / 迁移和演示恢复下变频。Qt offscreen 检查不能宣称 Windows / PNA 现场验证已完成。
 
 当前 Keysight 回归样本是下变频，201 点 cubic_ri 最大复数差约 1.87e−7；这不是仪器精度规格或上变频 Keysight 实测验证。SHORT 文件仅为 5～20 GHz 摘录，正式验证需完整原始标准文件。改动后更新版本、README、CHANGELOG 与验证记录，区分已验证事实、模型假设及待验证限制。
+
+## VMC 全量校准约定（v1.6.0）
+
+- 主界面保留展示与比较入口；不另建“对比验证”页。工作流名称为“校准 MUT”。主界面相位比较增强留给后续独立提交。
+- 保留 P1_RF / P1_IF / P2_RF / P2_IF 的 EDF、ESF、ERF；普通 Thru 求每频段 ELF / ELR / ETF / ETR，再以 P1_RF_ESF 和 IF_ELF 求 VMC_ETF。
+- 校准混频器 ETF 的完整分母为 `(1-C11*ESF)*(1-C22*ELF)-C12*C21*ESF*ELF`，交叉项是 C11*C22，不能写成 C11*C21。
+- MUT 用单端口反射校准及批准的 VC21 两失配因子公式；只承诺单向 / 忽略反向耦合模型，不能称为完整双向去嵌。反向 S12 不校准；导出零占位和报告必须明确标记。
+- 变频原始文件横轴显式选择 RF / IF / dual；dual 要求频段不重叠且两段对应四参数一致。普通 SOL / Thru 按实际频段匹配。标准定义可插值，原始测量不插值；不拟合结果消除差异。
+- 本轮没有 isolation、switch-term 和 receiver-ratio 独立采集，不假定 Keysight 与本模型误差项规范完全相同。GUI offscreen 不代表 Keysight / Windows 现场验证。
+- 校准包使用无 pickle 的 NPZ 和 JSON，校验数组 SHA256、项目 / 形状 / 频率配置；原子写入；源文件哈希来自解析同一份字节快照。MUT 文件 / 横轴改动只使 MUT 结果失效；校准配置改动则使校准包与 MUT 结果均失效。
