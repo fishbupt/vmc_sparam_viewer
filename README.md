@@ -8,6 +8,7 @@
 - 中文名称：**VMC 校准与验证工作台**。
 - Python 项目名称：`vmc-calibration-workbench`。
 - [《VMC 校准与验证工作台使用说明》](docs/vmc_calibration.md)。
+- [通用 VNA 校准验证功能升级清单](ToDo.md)。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
 
