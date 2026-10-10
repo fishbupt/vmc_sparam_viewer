@@ -70,10 +70,9 @@ with tempfile.TemporaryDirectory() as tmp:
         window.add_dataset(Dataset(f'file{n}.s2p', 'S2P / test',
             {p: np.full(3, value, complex) for p in PARAMS},
             {'StimulusFreq': f.copy(), 'OutputFreq': f + 20e9}, np.zeros(3, int)))
-    assert all(len(ax.lines) == 3 for ax in window.axes)
-    original_color = window.axes[0].lines[1].get_color()
-    window.files.item(0).setCheckState(Qt.CheckState.Unchecked)
-    assert all(len(ax.lines) == 2 for ax in window.axes)
+    assert window.analysis_tabs.currentIndex() == 0
+    assert all(len(ax.lines) == 1 for ax in window.axes)
+    assert not window.files.item(0).flags() & Qt.ItemFlag.ItemIsUserCheckable
     window.files.setCurrentRow(1)
     window.axis.setCurrentIndex(window.axis.findData('OutputFreq'))
     window.files.setCurrentRow(2)
@@ -81,12 +80,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert window.axis.currentData() == 'OutputFreq'
     window.remove()
     assert all(len(ax.lines) == 1 for ax in window.axes)
-    assert window.axes[0].lines[0].get_color() != original_color
-    window.files.item(0).setCheckState(Qt.CheckState.Checked)
-    assert len(window.axes[0].lines) == 2
     window.set_y_limits('S21', (-50, 0))
-    window.overlay.setCurrentIndex(1)
-    assert len(window.axes[0].lines) == 1
     np.testing.assert_allclose(window.axes[2].get_ylim(), [-50, 0])
     window.workspace.show_page(6)
     comparison = window.workspace.comparison
@@ -160,7 +154,7 @@ with tempfile.TemporaryDirectory() as tmp:
     window.log_toggle.setChecked(False)
     # Rebuild statistics after imported results change the dataset list.
     window.workspace.show_page(6)
-    assert window.workspace.comparison is not comparison
+    assert window.workspace.comparison is comparison
     for page in (0, 1, 2, 3, 4, 5, 6):
         window.workspace.show_page(page)
         window.resize(1000, 700)
@@ -199,4 +193,4 @@ with tempfile.TemporaryDirectory() as tmp:
     fallback = main.Window()
     assert fallback.type_selector.currentData() == 'vmc'
     fallback.close()
-print('Workbench UI passed: default / overlay / axes / shared state / threaded handoff / close guard / statistics / layout')
+print('Workbench UI passed: default / single file / axes / shared state / threaded handoff / close guard / statistics / layout')

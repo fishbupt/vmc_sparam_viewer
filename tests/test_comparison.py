@@ -34,3 +34,16 @@ class CompareTests(unittest.TestCase):
    self.assertEqual(rows[0]['S2P_Row'],'1')
  def test_no_match(self):
   with self.assertRaises(ValueError):compare(dataset([1]),dataset([5],kind='right'))
+
+ def test_two_axes_and_selected_segments(self):
+  a=dataset([1,2,3,4]); b=dataset([11,12,13,14],kind='right')
+  a.axes['OutputFreq']=np.array([11,12,13,14.])
+  a.segment=np.array([0,0,1,1]);b.segment=np.array([2,2,3,3])
+  r=compare(a,b,left_axis='OutputFreq',left_segment=1,right_segment=3)
+  self.assertEqual(r.i.tolist(),[2,3]);self.assertEqual(r.j.tolist(),[2,3])
+  self.assertEqual(r.left_axis,'OutputFreq')
+  with tempfile.TemporaryDirectory() as tmp:
+   f=Path(tmp)/'axes.csv';export_comparison(r,f)
+   with f.open(encoding='utf-8-sig') as stream: rows=list(csv.DictReader(stream))
+   self.assertEqual(float(rows[0]['S2P_OutputFreq_Hz']),13)
+   self.assertEqual(rows[0]['S2P_Row'],'3')

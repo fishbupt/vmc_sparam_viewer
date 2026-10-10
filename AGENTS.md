@@ -22,6 +22,7 @@
 | vmc_calibration.py | 四组 SOL / 两频段普通 Thru / 变频 ETF 求解，单向 MUT 校准，校准包与结果导出 |
 | vmc_calibration_gui.py | 两页签：计算 VMC 校准误差项 / 校准 MUT；QThread 调用与主界面联动 |
 | parser.py | Dataset、Touchstone / S2PX 解析、数据变换 |
+| comparison_page.py | 独立 A/B 页面、原始点叠加及共享验证报告 |
 | comparison.py | 唯一频率匹配、复数 / 幅度 / 相位差、统计与导出 |
 | main.py | 主窗口、查看与绘图、功能入口 |
 | viewer_gui.py / workbench_gui.py | 默认查看页布局、固定流程导航与共享 VMC 页面适配；不复制算法 |
@@ -64,6 +65,7 @@ uv run python tests/gui_vmc_calibration_smoke.py
 uv run python tests/gui_viewer_display_smoke.py
 uv run python tests/gui_vmc_simulation_smoke.py
 uv run python tests/gui_workbench_smoke.py
+uv run python tests/gui_analysis_smoke.py
 ```
 
 算法 / 映射修改需覆盖上下变频、两种插值、两种幅相插值跨 ±180° / 多圈解缠绕、样条幅相多项式解析恢复与负幅度拒绝、线性幅度而非 dB、零幅度相位拒绝、精确节点原值保留、非理想标准、无噪声闭环、原始 / 已修正第二轮、输出轴 / 注释 / JSON 一致性、外推拒绝及独立正向波量方程。不要仅以生成器和提取器相互吻合作为正确性依据。
@@ -100,3 +102,11 @@ GUI 检查控件只有两种插值、方向改变后的结果失效、生成到�
 - 验证报告复用 CompareDialog 的数值计算与导出，不能绕过 A 的 StimulusFreq 约束。通用算法、项目文件与自动容差判定尚未实现。
 - 底部日志汇总嵌入式工作流；关闭时检查所有页面后台线程。保留独立对话框用法和已有脚本联动。
 - 本版 GUI / 包版本 1.8.0，算法及其报告版本保持 1.7.0；不因纯界面改动篡改历史算法可追溯性。
+
+## 数据查看约定（v1.8.2，替代 v1.8.0 的勾选叠加约定）
+
+- 默认进入单文件查看，文件库无显示勾选；只展示当前选中的一个数据集。双文件比较使用 ComparisonPage 显式选择 A/B，与单文件的横轴、分段、模式及 Y 范围独立。
+- 叠加绘制两份文件各自原始网格，不要求匹配；差异复用 comparison.compare，显式选两側物理频率轴及分段，以原始行号记录匹配。不插值，不跨分段或缺失点连线；相位解缠绕复用 parser.values。
+- 验证报告打开同一个 ComparisonPage，不复制计算实现。历史同名 CompareDialog 保留默认 StimulusFreq API；新比较不要求 A 含 StimulusFreq。
+- A/B 或求解配置改变使结果失效；查看第三个文件、添加 / 移除无关文件不改变比较结果。所有页面后台任务进入主窗口 busy / 关闭保护。
+- GUI / 包版本 1.8.2，校准算法与报告版本保持 1.7.0。

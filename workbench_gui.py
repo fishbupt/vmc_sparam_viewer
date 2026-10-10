@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QListWidget,
 
 
 PAGES = (
-    ('查看与比较', '独立查看 SNP / S2PX；勾选文件叠加，或计算频率匹配后的差异。'),
+    ('数据查看', '单文件查看与双文件比较独立设置，共用导入文件库。'),
     ('项目配置', 'VMC 频率规划与端口配置；当前仅开放已实现的算法。'),
     ('标准件定义', 'OPEN / SHORT / LOAD / THRU，以及已表征的校准混频器。'),
     ('原始测量', '导入 OPEN / SHORT / LOAD / THRU / CalTHRU；或生成配套仿真数据。'),
@@ -39,10 +39,10 @@ class WorkbenchPages(QWidget):
     def __init__(self, owner, viewer):
         super().__init__(owner)
         self.owner = owner
-        self.calibration = self.simulation = self.comparison = None
-        self.comparison_signature = None
+        self.calibration = self.simulation = None
+        self.comparison = owner.comparison_view
         self.primary_action = None
-        self.workers = []
+        self.workers = [self.comparison]
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.navigation = QListWidget()
@@ -186,20 +186,9 @@ class WorkbenchPages(QWidget):
         self.show_page(4)
 
     def show_comparison(self):
-        signature = tuple(id(d) for d in self.owner.datasets)
-        if self.comparison is None or (signature != self.comparison_signature and not self.comparison.worker):
-            if self.comparison is not None:
-                self.stack.removeWidget(self.comparison)
-                self.workers.remove(self.comparison)
-                self.comparison.deleteLater()
-            from compare_gui import CompareDialog
-            self.comparison = CompareDialog(self.owner.datasets, self.owner, general=True)
-            self.comparison.setWindowFlags(Qt.WindowType.Widget)
-            self.comparison.setMinimumSize(0, 0)
-            self.stack.addWidget(self.comparison)
-            self.wire(self.comparison)
-            self.comparison_signature = signature
-        self.stack.setCurrentWidget(self.comparison)
+        # A report opens the same comparison instance and keeps its results/settings.
+        self.stack.setCurrentIndex(0)
+        self.owner.analysis_tabs.setCurrentIndex(1)
 
     def busy(self):
         return any(page.worker is not None for page in self.workers)

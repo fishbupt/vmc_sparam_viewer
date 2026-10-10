@@ -14,13 +14,19 @@ class Comparison:
     j: np.ndarray
     delta: dict
     ambiguous: int
+    left_axis: str = "StimulusFreq"
+    left_segment: object = None
+    right_segment: object = None
 
 
-def compare(left, right, axis='InputFreq', tolerance=0.001):
+def compare(left, right, axis='InputFreq', tolerance=0.001, left_axis='StimulusFreq',
+            left_segment=None, right_segment=None):
     if tolerance < 0 or not np.isfinite(tolerance):
         raise ValueError('频率容差必须是非负有限数。')
-    a = left.axes['StimulusFreq']
-    b = right.axes[axis]
+    ai = np.flatnonzero(np.ones(left.count, bool) if left_segment is None else left.segment == left_segment)
+    bj = np.flatnonzero(np.ones(right.count, bool) if right_segment is None else right.segment == right_segment)
+    a = left.axes[left_axis][ai]
+    b = right.axes[axis][bj]
     order = np.argsort(b, kind='stable')
     sorted_b = b[order]
     low = np.searchsorted(sorted_b, a-tolerance, 'left')
@@ -34,6 +40,7 @@ def compare(left, right, axis='InputFreq', tolerance=0.001):
     i, j = i[unique], j[unique]
     if not len(i):
         raise ValueError('没有可唯一匹配的频点。请检查比较频率轴/容差；重复频率不会按行号强行配对。')
+    i, j = ai[i], bj[j]
     delta = {}
     for p in PARAMS:
         x, y = left.s[p][i], right.s[p][j]
@@ -45,7 +52,7 @@ def compare(left, right, axis='InputFreq', tolerance=0.001):
         phase[valid] = (np.rad2deg(np.angle(x[valid])-np.angle(y[valid]))+180)%360-180
         delta[p] = {'幅度差 (dB)': db, '相位差 (°)': phase, '复数差模值': np.abs(diff),
                     '实部差': diff.real, '虚部差': diff.imag}
-    return Comparison(left,right,axis,tolerance,i,j,delta,ambiguous)
+    return Comparison(left,right,axis,tolerance,i,j,delta,ambiguous,left_axis,left_segment,right_segment)
 
 
 def stats(array):
@@ -58,9 +65,9 @@ def stats(array):
 def export_comparison(result, path):
     r=result
     right_prefix = 'S2PX' if r.right.kind.startswith('S2PX') else 'Reference'
-    cols={'S2P_Row':r.i+1,right_prefix+'_Row':r.j+1,'S2P_Stimulus_Hz':r.left.axes['StimulusFreq'][r.i],
+    cols={'S2P_Row':r.i+1,right_prefix+'_Row':r.j+1,('S2P_Stimulus_Hz' if r.left_axis == 'StimulusFreq' else 'S2P_'+r.left_axis+'_Hz'):r.left.axes[r.left_axis][r.i],
           right_prefix+'_'+r.axis+'_Hz':r.right.axes[r.axis][r.j],
-          'Frequency_Delta_Hz':r.left.axes['StimulusFreq'][r.i]-r.right.axes[r.axis][r.j],
+          'Frequency_Delta_Hz':r.left.axes[r.left_axis][r.i]-r.right.axes[r.axis][r.j],
           right_prefix+'_SegIndex':r.right.segment[r.j]}
     for p in PARAMS:
         for prefix,z in [('S2P',r.left.s[p][r.i]),(right_prefix,r.right.s[p][r.j])]:

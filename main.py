@@ -174,7 +174,7 @@ class Window(QMainWindow):
         menu = self.menuBar().addMenu('文件')
         for title, shortcut, slot in [('打开文件…', 'Ctrl+O', self.open_files),
                                      ('粘贴文本…', 'Ctrl+Shift+V', self.paste),
-                                     ('导出 CSV…', 'Ctrl+E', self.export)]:
+                                     ('导出当前文件 CSV…', 'Ctrl+E', self.export)]:
             action = QAction(title, self)
             action.setShortcut(shortcut)
             action.triggered.connect(slot)
@@ -241,7 +241,7 @@ class Window(QMainWindow):
         self.progress.setRange(0, 0)
         self.progress.hide()
         self.statusBar().addPermanentWidget(self.progress)
-        self.statusBar().showMessage('就绪 · 支持拖入文件 · 启动默认显示查看与比较')
+        self.statusBar().showMessage('就绪 · 支持拖入文件 · 启动默认显示单文件查看')
         self.activity_timer = QTimer(self)
         self.activity_timer.timeout.connect(self.refresh_activity)
         self.activity_timer.start(150)
@@ -254,6 +254,7 @@ class Window(QMainWindow):
         self.paste_btn.setEnabled(not active)
         self.export_btn.setEnabled(self.dataset is not None and not active)
         self.workspace.refresh_actions()
+        self.comparison_view.update_enabled()
         self.type_selector.setEnabled(not active)
         self.type_menu.setEnabled(not active)
         if self.pending and not active:
@@ -322,7 +323,10 @@ class Window(QMainWindow):
     def compare_any_files(self):
         if self.busy():
             return
-        self.workspace.show_page(6)
+        self.workspace.show_page(0)
+        self.analysis_tabs.setCurrentIndex(1)
+        if self.dataset is not None:
+            self.comparison_view.select_left(self.dataset)
 
     def calibrate_vmc(self):
         if not self.choose_calibration_type('vmc'):
@@ -411,16 +415,17 @@ class Window(QMainWindow):
 
     def add_dataset(self, data):
         self.datasets.append(data)
+        self.comparison_view.set_datasets(self.datasets)
         item = QListWidgetItem(Path(data.name).name)
         item.setToolTip(data.name)
-        item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-        item.setCheckState(Qt.CheckState.Checked)
+        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
         item.setData(Qt.ItemDataRole.UserRole, self.file_serial)
         item.setForeground(QColor(DATA_COLORS[self.file_serial % len(DATA_COLORS)]))
         self.file_serial += 1
         self.files.addItem(item)
         self.files.setCurrentRow(len(self.datasets) - 1)
         self.workspace.show_page(0)
+        self.analysis_tabs.setCurrentIndex(0)
         self.log.appendPlainText(f'已读取 {data.name} | {data.kind} | {data.count} 点')
         for warning in data.warnings:
             self.log.appendPlainText('提示：' + warning)
@@ -473,6 +478,7 @@ class Window(QMainWindow):
         if row >= 0:
             self.files.blockSignals(True)
             self.datasets.pop(row)
+            self.comparison_view.set_datasets(self.datasets)
             item = self.files.takeItem(row)
             self.view_options.pop(item.data(Qt.ItemDataRole.UserRole), None)
             self.files.blockSignals(False)
@@ -485,6 +491,7 @@ class Window(QMainWindow):
         self.files.blockSignals(True)
         self.files.clear()
         self.datasets.clear()
+        self.comparison_view.set_datasets(self.datasets)
         self.view_options.clear()
         self.files.blockSignals(False)
         self.select(-1)
@@ -546,19 +553,10 @@ class Window(QMainWindow):
             self.view_options[current.data(Qt.ItemDataRole.UserRole)] = (
                 self.axis.currentData(), self.segment.currentData())
         entries = []
-        for row, data in enumerate(self.datasets):
-            item = self.files.item(row)
-            if self.overlay.currentIndex() == 1:
-                if row != self.files.currentRow():
-                    continue
-            elif item.checkState() != Qt.CheckState.Checked:
-                continue
-            serial = item.data(Qt.ItemDataRole.UserRole)
-            option = self.view_options.get(serial, (next(iter(data.axes)), None))
-            # Frequency and point index have different dimensions: never mix them.
-            if (option[0] == 'Index') != (self.axis.currentData() == 'Index'):
-                continue
-            entries.append((row, data, serial, option))
+        if current is not None and self.dataset is not None:
+            serial = current.data(Qt.ItemDataRole.UserRole)
+            option = self.view_options[serial]
+            entries.append((self.files.currentRow(), self.dataset, serial, option))
         return entries
 
     def plot(self):
