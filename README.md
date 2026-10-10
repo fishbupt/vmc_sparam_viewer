@@ -1,4 +1,4 @@
-# VMC Calibration Workbench · VMC 校准与验证工作台 · v1.6.1
+# VMC Calibration Workbench · VMC 校准与验证工作台 · v1.6.2
 
 用于 VMC 算法研发与验证：生成仿真数据、表征校准混频器、计算校准误差项、校准 MUT，以及展示和比较 S2P / Keysight Converter Sweep Data S2PX。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。
 
@@ -10,6 +10,16 @@
 - [《VMC 校准与验证工作台使用说明》](docs/vmc_calibration.md)。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
+
+## v1.6.2：VMC 校准窗口左右布局
+
+左侧集中放置 RF、固定 LO、变频方向、自动计算的 IF 起止频率、标准插值、文件横轴和校准操作。右侧按用途分为三个文件组：
+
+- **标准件定义**：OPEN / SHORT / LOAD / THRU。
+- **原始测量**：OPEN / SHORT / LOAD / THRU / CalTHRU；CalTHRU 为接入校准混频器的变频 Thru 原始数据。
+- **已表征的校准混频器**：独立的表征 S2P 输入。
+
+左右宽度可拖动调整，两侧独立滚动。共用 / 独立标准件、12 组独立 SOL、Flush / defined Thru 及校准包设置均保留。算法与校准数据格式不变。
 
 ## v1.6.0：计算 VMC 校准误差项 / 校准 MUT
 

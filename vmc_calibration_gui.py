@@ -1,10 +1,10 @@
 """VMC calibration / calibrate MUT dialog. No independent comparison page."""
 from pathlib import Path
 import numpy as np
-from PyQt6.QtCore import QSettings, pyqtSignal
+from PyQt6.QtCore import QSettings, pyqtSignal, Qt
 from PyQt6.QtWidgets import (QDialog,QVBoxLayout,QHBoxLayout,QFormLayout,QGroupBox,
     QLabel,QLineEdit,QPushButton,QComboBox,QDoubleSpinBox,QSpinBox,QCheckBox,
-    QTabWidget,QWidget,QScrollArea,QPlainTextEdit,QProgressBar,QFileDialog,QMessageBox)
+    QTabWidget,QWidget,QScrollArea,QPlainTextEdit,QProgressBar,QFileDialog,QMessageBox,QSplitter)
 from characterize_gui import Worker
 from characterization import SAMPLING_METHODS
 from frequency_mapping import CONVERSION_MODES, output_frequencies
@@ -17,19 +17,22 @@ class VMCCalibrationDialog(QDialog):
 
     def __init__(self,parent=None):
         super().__init__(parent)
-        self.setWindowTitle('VMC 全量校准 · 计算误差项 / 校准 MUT');self.resize(1100,850)
+        self.setWindowTitle('VMC 全量校准 · 计算误差项 / 校准 MUT');self.resize(1320,940)
+        self.setMinimumSize(1000,700)
+        self.setStyleSheet('QPushButton#fileBrowse { padding: 3px 8px; } '
+            'QWidget#vmcConfig QComboBox, QWidget#vmcConfig QLineEdit { padding: 3px; }')
         self.settings=QSettings('VNAAlgorithmTools','VMCFullCalibration')
         self.worker=None;self.calibration=None;self.mut_result=None
-        self.fields={};self.controls=[];self.cal_inputs=[];self.mut_inputs=[]
+        self.fields={};self.controls=[];self.file_rows={}
         layout=QVBoxLayout(self)
-        intro=QLabel('机械 SOLT：两个端口分别做 RF / IF SOL，普通 Thru 求负载匹配，校准混频器求变频 ETF。\n'
-                     '校准 MUT 使用单向 / 忽略反向耦合公式；展示与比较复用主界面。')
+        intro=QLabel('左侧设置 RF / IF 与校准参数，右侧加载标准件定义、原始测量和已表征校准混频器。')
         intro.setWordWrap(True);layout.addWidget(intro)
-        self.tabs=QTabWidget();layout.addWidget(self.tabs,1)
-        page=QWidget();page_layout=QVBoxLayout(page);scroll=QScrollArea();scroll.setWidgetResizable(True)
-        body=QWidget();body_layout=QVBoxLayout(body);scroll.setWidget(body);page_layout.addWidget(scroll)
-        self.tabs.addTab(page,'计算 VMC 校准误差项')
-        group=QGroupBox('频率与标准件求值');form=QFormLayout(group);body_layout.addWidget(group)
+        self.splitter=QSplitter(Qt.Orientation.Horizontal);self.splitter.setChildrenCollapsible(False)
+        layout.addWidget(self.splitter,1)
+        self.config_scroll=QScrollArea();self.config_scroll.setWidgetResizable(True);self.config_scroll.setMinimumWidth(320)
+        self.config_panel=QWidget();self.config_panel.setObjectName('vmcConfig');config_layout=QVBoxLayout(self.config_panel)
+        self.config_scroll.setWidget(self.config_panel);self.splitter.addWidget(self.config_scroll)
+        group=QGroupBox('VMC 配置');form=QFormLayout(group);config_layout.addWidget(group)
         self.spins={}
         for key,label,default,lo,hi in [
                 ('rf_start_hz','RF 起点 (GHz)',10,.000000001,1000),
@@ -37,74 +40,98 @@ class VMCCalibrationDialog(QDialog):
                 ('lo_hz','固定 LO (GHz)',20,.000000001,1000),
                 ('z0','参考阻抗 (Ω)',50,.001,10000),
                 ('frequency_tolerance_hz','频点容差 (Hz)',.001,0,1e6)]:
-            s=QDoubleSpinBox();s.setDecimals(9);s.setRange(lo,hi)
-            s.setValue(float(self.settings.value(key,default)));form.addRow(label,s)
-            s.valueChanged.connect(self.invalidate_cal);self.spins[key]=s;self.controls.append(s)
+            spin=QDoubleSpinBox();spin.setDecimals(9);spin.setRange(lo,hi)
+            spin.setValue(float(self.settings.value(key,default)));form.addRow(label,spin)
+            spin.valueChanged.connect(self.invalidate_cal);self.spins[key]=spin;self.controls.append(spin)
         self.points=QSpinBox();self.points.setRange(2,200001);self.points.setValue(int(self.settings.value('points',201)))
         self.points.valueChanged.connect(self.invalidate_cal);form.addRow('扫频点数',self.points);self.controls.append(self.points)
         self.conversion=self.combo(form,'IF 变频方向',CONVERSION_MODES,'frequency_conversion','up')
-        self.sampling=self.combo(form,'标准定义插值',SAMPLING_METHODS,'standard_sampling','cubic_ri')
-        self.raw_axis=self.combo(form,'变频原始文件横轴',AXIS_MODES,'raw_axis','dual')
-        self.definition_axis=self.combo(form,'校准混频器表征横轴',{'rf':'RF 横轴','if':'IF 横轴'},'mixer_definition_axis','rf')
-        self.mapping_label=QLabel();self.mapping_label.setWordWrap(True);form.addRow('频率映射',self.mapping_label)
+        self.if_start=QLineEdit();self.if_start.setReadOnly(True)
+        self.if_stop=QLineEdit();self.if_stop.setReadOnly(True)
+        self.if_start.setToolTip('由 RF、固定 LO 和变频方向自动计算。')
+        self.if_stop.setToolTip('由 RF、固定 LO 和变频方向自动计算。')
+        form.addRow('IF 起点 (GHz)',self.if_start);form.addRow('IF 终点 (GHz)',self.if_stop)
+        self.sampling=self.combo(form,'标准插值',SAMPLING_METHODS,'standard_sampling','cubic_ri')
+        self.raw_axis=self.combo(form,'原始文件横轴',AXIS_MODES,'raw_axis','dual')
+        self.definition_axis=self.combo(form,'表征文件横轴',{'rf':'RF 横轴','if':'IF 横轴'},'mixer_definition_axis','rf')
+        self.mapping_label=QLabel();self.mapping_label.setWordWrap(True);form.addRow('RF → IF',self.mapping_label)
         self.update_mapping()
-        group=QGroupBox('标准件定义：OPEN / SHORT / LOAD（S1P）');form=QFormLayout(group);body_layout.addWidget(group)
-        for kind in KINDS: self.path_field(form,'std_P1_'+kind,'Port1 / 共用 '+kind)
-        self.separate_std=self.check(form,'Port2 使用独立标准件定义','separate_std')
-        self.std2_group=QGroupBox('Port2 标准件定义');sub=QFormLayout(self.std2_group);body_layout.addWidget(self.std2_group)
-        for kind in KINDS: self.path_field(sub,'std_P2_'+kind,'Port2 '+kind)
-        self.separate_std.toggled.connect(self.std2_group.setVisible);self.std2_group.setVisible(self.separate_std.isChecked())
-        group=QGroupBox('SOL 原始测量');form=QFormLayout(group);body_layout.addWidget(group)
-        self.separate_sol=self.check(form,'逐项导入 12 组 SOL（S1P 或 S2P）','separate_sol')
-        self.shared_sol=QGroupBox('共用三个 S2P：P1 读取 S11、P2 读取 S22，分别匹配 RF / IF');sub=QFormLayout(self.shared_sol)
-        for kind in KINDS: self.path_field(sub,'sol_shared_'+kind,kind)
-        body_layout.addWidget(self.shared_sol)
-        self.sol_groups=QGroupBox('四组独立 SOL');sub=QFormLayout(self.sol_groups)
-        for g in GROUPS:
-            for kind in KINDS:self.path_field(sub,'sol_'+g+'_'+kind,g+' '+kind)
-        body_layout.addWidget(self.sol_groups)
-        self.separate_sol.toggled.connect(self.toggle_sol);self.toggle_sol(self.separate_sol.isChecked())
-        group=QGroupBox('普通 Thru / Flush 与校准混频器');form=QFormLayout(group);body_layout.addWidget(group)
-        self.path_field(form,'thru_RF','Thru 原始测量 RF / 共用（S2P）')
-        self.path_field(form,'thru_IF','Thru 原始测量 IF（空则共用 RF 文件）')
-        self.defined_thru=self.check(form,'使用已定义 Thru；不勾选为理想 Flush','defined_thru')
-        self.path_field(form,'definition_thru_RF','Thru 定义 RF / 共用（S2P）')
-        self.path_field(form,'definition_thru_IF','Thru 定义 IF（空则共用 RF 定义）')
-        self.path_field(form,'cal_mixer','已表征校准混频器（S2P）')
-        self.path_field(form,'cal_raw','校准混频器变频 Thru 原始测量（S2P）')
-        self.defined_thru.toggled.connect(self.toggle_thru);self.toggle_thru(self.defined_thru.isChecked())
-        actions=QHBoxLayout();page_layout.addLayout(actions)
-        self.compute_btn=QPushButton('计算 VMC 校准误差项');self.compute_btn.setObjectName('primary');self.compute_btn.clicked.connect(self.compute)
-        self.save_btn=QPushButton('保存校准包…');self.save_btn.clicked.connect(self.save)
-        self.load_btn=QPushButton('载入校准包…');self.load_btn.clicked.connect(self.load)
-        for b in [self.compute_btn,self.save_btn,self.load_btn]:actions.addWidget(b)
-        row=QHBoxLayout();page_layout.addLayout(row)
-        self.terms=QComboBox();self.terms.addItems(['尚无校准误差项']);row.addWidget(self.terms,1)
-        self.show_term_btn=QPushButton('载入选中误差项到主界面');self.show_term_btn.clicked.connect(self.show_term);row.addWidget(self.show_term_btn)
-        mut=QWidget();ml=QVBoxLayout(mut);self.tabs.addTab(mut,'校准 MUT')
-        info=QLabel('使用刚计算或载入的校准包。原始 MUT 与校准结果同时载入主界面；S21 显示 VC21。\n'
-                    'S12 未校准；导出文件中的 S12=0 为明确标记的占位，不能作为反向结果。')
-        info.setWordWrap(True);ml.addWidget(info)
-        self.cal_state=QLabel('尚无校准包，请先计算或载入。');self.cal_state.setWordWrap(True);ml.addWidget(self.cal_state)
-        form=QFormLayout();ml.addLayout(form)
-        self.path_field(form,'mut_raw','MUT 原始测量（S2P）',mut=True)
+        mut_config=QGroupBox('MUT 配置 / 当前校准');form=QFormLayout(mut_config);config_layout.addWidget(mut_config)
         self.mut_axis=QComboBox()
         for key,label in AXIS_MODES.items():self.mut_axis.addItem(label,key)
+        self.mut_axis.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.mut_axis.setMinimumContentsLength(10)
         self.mut_axis.setCurrentIndex(max(0,self.mut_axis.findData(self.settings.value('mut_axis','dual'))))
-        self.mut_axis.currentIndexChanged.connect(self.invalidate_mut);form.addRow('MUT 原始文件横轴',self.mut_axis);self.controls.append(self.mut_axis)
-        actions=QHBoxLayout();ml.addLayout(actions)
+        self.mut_axis.currentIndexChanged.connect(self.invalidate_mut);form.addRow('MUT 文件横轴',self.mut_axis);self.controls.append(self.mut_axis)
+        self.cal_state=QLabel('尚无校准包，请先计算或载入。');self.cal_state.setWordWrap(True);form.addRow(self.cal_state)
+        actions=QGroupBox('校准操作');al=QVBoxLayout(actions);config_layout.addWidget(actions)
+        self.compute_btn=QPushButton('计算 VMC 校准误差项');self.compute_btn.setObjectName('primary');self.compute_btn.clicked.connect(self.compute);al.addWidget(self.compute_btn)
+        row=QHBoxLayout();al.addLayout(row)
+        self.save_btn=QPushButton('保存校准包…');self.save_btn.clicked.connect(self.save);row.addWidget(self.save_btn)
+        self.load_btn=QPushButton('载入校准包…');self.load_btn.clicked.connect(self.load);row.addWidget(self.load_btn)
+        self.terms=QComboBox();self.terms.addItems(['尚无校准误差项']);al.addWidget(self.terms)
+        self.show_term_btn=QPushButton('载入选中误差项到主界面');self.show_term_btn.clicked.connect(self.show_term);al.addWidget(self.show_term_btn)
+        config_layout.addStretch()
+        self.tabs=QTabWidget();self.tabs.setMinimumWidth(600);self.splitter.addWidget(self.tabs)
+        self.splitter.setStretchFactor(0,0);self.splitter.setStretchFactor(1,1);self.splitter.setSizes([400,900])
+        page=QWidget();page_layout=QVBoxLayout(page);self.file_scroll=QScrollArea();self.file_scroll.setWidgetResizable(True)
+        body=QWidget();body_layout=QVBoxLayout(body);self.file_scroll.setWidget(body);page_layout.addWidget(self.file_scroll)
+        self.tabs.addTab(page,'计算 VMC 校准误差项')
+        self.standard_group=QGroupBox('标准件定义：OPEN / SHORT / LOAD / THRU')
+        standard_layout=QVBoxLayout(self.standard_group);form=QFormLayout();standard_layout.addLayout(form);body_layout.addWidget(self.standard_group)
+        for kind in KINDS:self.path_field(form,'std_P1_'+kind,'Port1 / 共用 '+kind+' (S1P)')
+        self.separate_std=self.check(form,'Port2 使用独立 OPEN / SHORT / LOAD 定义','separate_std')
+        self.std2_group=QGroupBox('Port2 标准件定义');sub=QFormLayout(self.std2_group);standard_layout.addWidget(self.std2_group)
+        for kind in KINDS:self.path_field(sub,'std_P2_'+kind,'Port2 '+kind+' (S1P)')
+        self.separate_std.toggled.connect(self.std2_group.setVisible);self.std2_group.setVisible(self.separate_std.isChecked())
+        form=QFormLayout();standard_layout.addLayout(form)
+        self.defined_thru=self.check(form,'THRU 使用 S2P 定义；不勾选为理想 Flush','defined_thru')
+        self.path_field(form,'definition_thru_RF','THRU RF / 共用 (S2P)')
+        self.path_field(form,'definition_thru_IF','THRU IF (空则共用 RF)')
+        self.defined_thru.toggled.connect(self.toggle_thru);self.toggle_thru(self.defined_thru.isChecked())
+        self.measurement_group=QGroupBox('原始测量：OPEN / SHORT / LOAD / THRU / CalTHRU')
+        measurement_layout=QVBoxLayout(self.measurement_group);form=QFormLayout();measurement_layout.addLayout(form);body_layout.addWidget(self.measurement_group)
+        self.separate_sol=self.check(form,'逐项导入 12 组 SOL（S1P 或 S2P）','separate_sol')
+        self.shared_sol=QWidget();sub=QFormLayout(self.shared_sol);sub.setContentsMargins(0,0,0,0)
+        for kind in KINDS:self.path_field(sub,'sol_shared_'+kind,kind+' (共用 S2P)')
+        measurement_layout.addWidget(self.shared_sol)
+        self.sol_groups=QGroupBox('四组独立 SOL');sub=QFormLayout(self.sol_groups)
+        for group_name in GROUPS:
+            for kind in KINDS:self.path_field(sub,'sol_'+group_name+'_'+kind,group_name+' '+kind)
+        measurement_layout.addWidget(self.sol_groups)
+        self.separate_sol.toggled.connect(self.toggle_sol);self.toggle_sol(self.separate_sol.isChecked())
+        form=QFormLayout();measurement_layout.addLayout(form)
+        self.path_field(form,'thru_RF','THRU RF / 共用 (S2P)')
+        self.path_field(form,'thru_IF','THRU IF (空则共用 RF)')
+        self.path_field(form,'cal_raw','CalTHRU (S2P)')
+        note=QLabel('CalTHRU：接入校准混频器后的变频 Thru 原始测量。共用 SOL 文件中 P1 取 S11、P2 取 S22。')
+        note.setWordWrap(True);measurement_layout.addWidget(note)
+        self.mixer_group=QGroupBox('已表征的校准混频器');form=QFormLayout(self.mixer_group);body_layout.addWidget(self.mixer_group)
+        self.path_field(form,'cal_mixer','校准混频器表征 (S2P)')
+        body_layout.addStretch()
+        mut=QWidget();ml=QVBoxLayout(mut);self.tabs.addTab(mut,'校准 MUT')
+        group=QGroupBox('被测混频器原始测量');form=QFormLayout(group);ml.addWidget(group)
+        self.path_field(form,'mut_raw','MUT 原始测量 (S2P)',mut=True)
+        info=QLabel('使用左侧所示校准包与 MUT 文件横轴。校准后，原始 MUT 与校准结果同时载入主界面，S21 显示 VC21。\n'
+                    'S12 未校准，导出零值为明确标记的占位。')
+        info.setWordWrap(True);ml.addWidget(info)
+        row=QHBoxLayout();ml.addLayout(row)
         self.mut_btn=QPushButton('校准 MUT 并载入主界面');self.mut_btn.setObjectName('primary');self.mut_btn.clicked.connect(self.compute_mut)
         self.export_btn=QPushButton('导出校准 MUT 结果包…');self.export_btn.clicked.connect(self.export)
-        actions.addWidget(self.mut_btn);actions.addWidget(self.export_btn);ml.addStretch()
-        self.summary=QLabel('请配置四组 SOL、普通 Thru 和校准混频器，或载入已有校准包。');self.summary.setWordWrap(True);layout.addWidget(self.summary)
+        row.addWidget(self.mut_btn);row.addWidget(self.export_btn);ml.addStretch()
+        self.summary=QLabel('请配置标准件定义、原始测量和已表征校准混频器，或载入已有校准包。');self.summary.setWordWrap(True);layout.addWidget(self.summary)
         self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.hide();layout.addWidget(self.progress)
-        self.log=QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumHeight(140);layout.addWidget(self.log)
+        self.log=QPlainTextEdit();self.log.setReadOnly(True);self.log.setMaximumHeight(85);layout.addWidget(self.log)
         close=QPushButton('关闭');close.clicked.connect(self.reject);layout.addWidget(close)
         self.refresh_buttons()
 
     def path_field(self,form,key,label,mut=False):
-        row=QHBoxLayout();field=QLineEdit(str(self.settings.value('path/'+key,'')));button=QPushButton('浏览…')
-        row.addWidget(field,1);row.addWidget(button);form.addRow(label,row)
+        container=QWidget();row=QHBoxLayout(container);row.setContentsMargins(0,0,0,0)
+        field=QLineEdit(str(self.settings.value('path/'+key,'')));button=QPushButton('浏览…')
+        button.setObjectName('fileBrowse')
+        title=QLabel(label);title.setMinimumWidth(170)
+        row.addWidget(field,1);row.addWidget(button);form.addRow(title,container)
+        field.setToolTip(label);self.file_rows[key]=container
         button.clicked.connect(lambda checked=False,e=field:self.browse(e))
         field.textChanged.connect(self.invalidate_mut if mut else self.invalidate_cal)
         self.fields[key]=field;self.controls.extend([field,button])
@@ -112,6 +139,7 @@ class VMCCalibrationDialog(QDialog):
 
     def combo(self,form,label,choices,key,default):
         c=QComboBox()
+        c.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon);c.setMinimumContentsLength(10)
         for value,title in choices.items():c.addItem(title,value)
         c.setCurrentIndex(max(0,c.findData(self.settings.value(key,default))))
         c.currentIndexChanged.connect(self.invalidate_cal);form.addRow(label,c);self.controls.append(c);return c
@@ -124,7 +152,7 @@ class VMCCalibrationDialog(QDialog):
         self.shared_sol.setVisible(not independent);self.sol_groups.setVisible(independent)
 
     def toggle_thru(self,enabled):
-        for key in ['definition_thru_RF','definition_thru_IF']:self.fields[key].setEnabled(enabled)
+        for key in ['definition_thru_RF','definition_thru_IF']:self.file_rows[key].setEnabled(enabled)
 
     def invalidate_cal(self,*args):
         self.calibration=None;self.mut_result=None
@@ -152,9 +180,11 @@ class VMCCalibrationDialog(QDialog):
         try:
             rf=np.array([self.spins['rf_start_hz'].value(),self.spins['rf_stop_hz'].value()])*1e9
             iff=output_frequencies(rf,self.spins['lo_hz'].value()*1e9,self.conversion.currentData())
+            self.if_start.setText(f'{iff[0]/1e9:.9g}');self.if_stop.setText(f'{iff[1]/1e9:.9g}')
             self.mapping_label.setText(f'RF {rf[0]/1e9:g}～{rf[1]/1e9:g} GHz → IF {iff[0]/1e9:g}～{iff[1]/1e9:g} GHz；'
                 f'{self.points.value()} 个配对点。导出报告保留逐点映射。')
-        except ValueError as e:self.mapping_label.setText(str(e))
+        except ValueError as e:
+            self.if_start.setText('—');self.if_stop.setText('—');self.mapping_label.setText(str(e))
 
     def browse(self,field):
         path,_=QFileDialog.getOpenFileName(self,'选择原始测量或标准定义',self.settings.value('directory',''),'Touchstone (*.s1p *.s2p *.S1P *.S2P);;所有文件 (*)')

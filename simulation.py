@@ -162,7 +162,7 @@ def simulate(standard_paths, options=SimulationOptions()):
         '说明':'无噪声混频器真值；不是可自行变频的 DummyDUT 模型'},[])
     matrix=np.stack((np.stack((c11,t),axis=-1),np.stack((t,c22),axis=-1)),axis=-2)
     max_sv=float(np.max(np.linalg.svd(matrix,compute_uv=False)))
-    manifest={'version':'1.6.1','options':asdict(o),'z0_ohm':z0,'frequency_conversion':o.frequency_conversion,'if_relation':relation+' (non-inverting)',
+    manifest={'version':'1.6.2','options':asdict(o),'z0_ohm':z0,'frequency_conversion':o.frequency_conversion,'if_relation':relation+' (non-inverting)',
         'phase_reference':'Phases are at RF start; phase slope is -2*pi*(RF-RF_start)*delay',
         'model':'m=D+R*Gamma/(1-S*Gamma); output reflection=C11+C12*C21*Gamma/(1-C22*Gamma)',
         'truth_reference_root_sign':1 if abs(np.sqrt(t[0]*t[0])-t[0]) <= abs(np.sqrt(t[0]*t[0])+t[0]) else -1,

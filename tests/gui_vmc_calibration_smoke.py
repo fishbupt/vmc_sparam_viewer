@@ -10,12 +10,14 @@ import vmc_calibration_gui
 from vmc_calibration_gui import VMCCalibrationDialog
 from vmc_calibration import save_calibration,load_calibration,export_mut
 from test_vmc_calibration import fixture
-from main import Window
+from main import Window,STYLE
 import numpy as np
 
 app=QApplication([])
+app.setStyleSheet(STYLE)
 with tempfile.TemporaryDirectory() as tmp:
-    root=Path(tmp);settings=QSettings(str(root/'settings.ini'),QSettings.Format.IniFormat)
+    root=Path(tmp);screenshots=Path(os.environ.get('VMC_GUI_SCREENSHOT_DIR',tmp));screenshots.mkdir(parents=True,exist_ok=True)
+    settings=QSettings(str(root/'settings.ini'),QSettings.Format.IniFormat)
     vmc_calibration_gui.QSettings=lambda *a:settings
     errors=[];QMessageBox.warning=lambda *a:errors.append(a[2])
     main=Window();dialog=VMCCalibrationDialog(main);dialog.generated.connect(main.add_dataset)
@@ -23,6 +25,14 @@ with tempfile.TemporaryDirectory() as tmp:
     assert any('VMC 校准误差项' in b.text() for b in main.findChildren(QPushButton))
     assert dialog.tabs.count()==2 and dialog.tabs.tabText(1)=='校准 MUT'
     assert dialog.sampling.count()==2
+    assert dialog.config_panel.isAncestorOf(dialog.spins['rf_start_hz'])
+    assert dialog.config_panel.isAncestorOf(dialog.mut_axis)
+    assert dialog.standard_group.isAncestorOf(dialog.fields['std_P1_OPEN'])
+    assert dialog.standard_group.isAncestorOf(dialog.fields['definition_thru_RF'])
+    for key in ['sol_shared_OPEN','thru_RF','cal_raw']:
+        assert dialog.measurement_group.isAncestorOf(dialog.fields[key])
+    assert dialog.mixer_group.isAncestorOf(dialog.fields['cal_mixer'])
+    assert dialog.if_start.text()=='30' and dialog.if_stop.text()=='40'
     for kind,path in zip(['OPEN','SHORT','LOAD'],inp.standards['P1']):dialog.fields['std_P1_'+kind].setText(path)
     for kind,path in zip(['OPEN','SHORT','LOAD'],inp.sol['P1_RF']):dialog.fields['sol_shared_'+kind].setText(path)
     dialog.fields['thru_RF'].setText(inp.thru_raw['RF'])
@@ -51,9 +61,16 @@ with tempfile.TemporaryDirectory() as tmp:
     dialog.begin(export_mut,(dialog.mut_result,root/'result.zip'),lambda _:None);wait()
     assert (root/'result.zip').is_file()
     dialog.tabs.setCurrentIndex(0);app.processEvents()
-    dialog.grab().save('/workspace/scratch/81ccd9fb0d9c/vmc_calibration_v160_gui.png')
+    assert dialog.grab().save(str(screenshots/'vmc_calibration_split_advanced.png'))
+    # Inspect the default shared-files view and resizing independently of reload mapping.
+    dialog.separate_sol.setChecked(False);app.processEvents()
+    assert dialog.shared_sol.isVisible() and not dialog.sol_groups.isVisible()
+    assert dialog.grab().save(str(screenshots/'vmc_calibration_split_shared.png'))
+    dialog.resize(1000,700);app.processEvents()
+    assert dialog.config_scroll.geometry().right()<dialog.tabs.geometry().left()
+    dialog.resize(1320,940);app.processEvents()
     dialog.tabs.setCurrentIndex(1);app.processEvents()
-    dialog.grab().save('/workspace/scratch/81ccd9fb0d9c/vmc_mut_v160_gui.png')
+    assert dialog.grab().save(str(screenshots/'vmc_calibration_split_mut.png'))
     dialog.reject();again=VMCCalibrationDialog(main)
     assert again.points.value()==41 and again.fields['mut_raw'].text()==mut
     assert again.calibration is None and not again.mut_btn.isEnabled()
