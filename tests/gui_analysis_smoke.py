@@ -40,6 +40,13 @@ with tempfile.TemporaryDirectory() as tmp:
     assert c.selection()[0] is a and c.selection()[1] is b
     assert len(w.axes[0].lines) == 1
     np.testing.assert_allclose(w.axes[0].lines[0].get_ydata(), 20*np.log10(.3))
+    # All single-file parameters and imported files share one plain curve style.
+    for row in range(w.files.count()):
+        w.files.setCurrentRow(row)
+        for ax in w.axes:
+            for line in ax.lines:
+                assert line.get_color() == '#2563eb' and line.get_linestyle() == '-'
+                assert line.get_marker() == 'None'
     w.files.setCurrentRow(0); w.mode.setCurrentText('相位 (°)')
     w.axis.setCurrentIndex(w.axis.findData('OutputFreq')); w.set_y_limits('S21',(-180,180))
     w.compare_any_files(); assert w.analysis_tabs.currentIndex() == 1
@@ -48,6 +55,8 @@ with tempfile.TemporaryDirectory() as tmp:
     # Four A / three B raw points, including unmatched points, and no third file.
     lines = c.axes[0].lines
     assert len(lines) == 4
+    assert lines[0].get_color() != lines[2].get_color()
+    assert lines[0].get_linestyle() == '-' and lines[2].get_linestyle() == '--'
     assert sum(len(line.get_xdata()) for line in lines[:2]) == 4
     assert sum(len(line.get_xdata()) for line in lines[2:]) == 3
     c.metric.setCurrentText('相位叠加 (°)')

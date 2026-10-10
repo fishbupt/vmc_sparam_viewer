@@ -5,7 +5,7 @@ import traceback
 from pathlib import Path
 import numpy as np
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QAbstractTableModel, QSettings, QTimer
-from PyQt6.QtGui import QAction, QActionGroup, QCursor, QColor
+from PyQt6.QtGui import QAction, QActionGroup, QCursor
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
     QPushButton, QComboBox, QLabel, QPlainTextEdit, QFileDialog, QMessageBox,
@@ -14,8 +14,6 @@ from parser import PARAMS, load_file, parse_text, table_data, export_csv, values
 
 MODES = {'幅度 (dB)': 'dB', '线性幅度': 'Magnitude', '相位 (°)': 'Phase',
          '解缠绕相位 (°)': 'Unwrapped', '实部': 'Real', '虚部': 'Imag'}
-COLORS = {'S11': '#2563eb', 'S12': '#d97706', 'S21': '#059669', 'S22': '#7c3aed'}
-DATA_COLORS = ('#2563eb', '#d97706', '#059669', '#7c3aed', '#dc2626', '#0891b2')
 STYLE = '''
 QMainWindow, QDialog { background: #f3f6fa; }
 QWidget { font-family: "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI"; font-size: 10pt; color: #24344a; }
@@ -420,7 +418,6 @@ class Window(QMainWindow):
         item.setToolTip(data.name)
         item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
         item.setData(Qt.ItemDataRole.UserRole, self.file_serial)
-        item.setForeground(QColor(DATA_COLORS[self.file_serial % len(DATA_COLORS)]))
         self.file_serial += 1
         self.files.addItem(item)
         self.files.setCurrentRow(len(self.datasets) - 1)
@@ -575,17 +572,16 @@ class Window(QMainWindow):
             if entries:
                 for row, data, serial, option in entries:
                     x, y, mask = self.plotting_arrays(p, data, option)
-                    color = DATA_COLORS[serial % len(DATA_COLORS)]
                     labeled = False
                     for run in runs(data.segment):
                         indices = run[mask[run]]
                         if len(indices):
                             yp = y[indices].copy()
                             yp[~np.isfinite(yp)] = np.nan
-                            ax.plot(x[indices], yp, color=color, linewidth=1.6,
-                                    linestyle=('-', '--', '-.', ':')[serial % 4],
+                            ax.plot(x[indices], yp, color='#2563eb', linewidth=1.6,
+                                    linestyle='-',
                                     label=f'{row + 1}: {Path(data.name).name}' if not labeled else None,
-                                    marker='o' if len(indices) <= 100 else None, markersize=4)
+                                    marker=None)
                             labeled = True
                 if len(entries) > 1:
                     ax.legend(fontsize=8, loc='best')

@@ -1,4 +1,4 @@
-# VNA Calibration Workbench · VNA 校准与验证工作台 · v1.8.2
+# VNA Calibration Workbench · VNA 校准与验证工作台 · v1.8.3
 
 启动默认进入 **数据查看 → 单文件查看**，支持独立打开 S2P / Keysight Converter Sweep Data S2PX；**双文件比较**独立选择 A/B，显示叠加曲线及匹配频点后的差异统计。还提供 VMC 研发流程：生成仿真数据、表征校准混频器、计算误差项和校准 MUT。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。通用 SOLT / TRL / 多端口等算法仍属于升级规划，当前文件查看器仍面向双端口数据。
 
@@ -11,6 +11,10 @@
 - [通用 VNA 校准验证功能升级清单](ToDo.md)。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
+
+## v1.8.3：单文件曲线统一样式
+
+单文件查看的所有 S 参数均使用蓝色实线，无采样点形状，切换文件不改变曲线样式；共享文件库采用统一文字颜色。双文件比较继续用蓝色实线 A / 橙色虚线 B 区分，保留图例。数据、幅相与 Y 轴功能不变。验证见 [docs/validation_v1.8.3.md](docs/validation_v1.8.3.md)。
 
 ## v1.8.2：独立单文件查看与双文件比较
 
