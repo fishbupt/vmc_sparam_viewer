@@ -1,6 +1,16 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "vna-calibration-workbench"
-version = "1.8.3"
+version = "1.9.0"
 description = "VNA S-parameter viewing and comparison workbench with VMC calibration workflows"
 requires-python = ">=3.10"
 dependencies = ["PyQt6>=6.6,<7", "numpy>=1.24,<3", "matplotlib>=3.8,<4", "scipy>=1.10,<2"]
+
+[project.scripts]
+vna-calibration-workbench = "vna_workbench.app.application:main"
+
+[tool.setuptools.packages.find]
+include = ["vna_workbench*"]

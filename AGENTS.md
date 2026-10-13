@@ -2,33 +2,32 @@
 
 本工程用于校准混频器算法的正式验证：查看 S2P / Keysight S2PX、生成可追溯的 SOL 仿真输入、从两轮 SOL 提取表征、与真值及 Keysight 输出比较。正确性优先于界面装饰。先读 README.md、CHANGELOG.md 和相关测试，再修改。
 
-产品名称统一为 VNA Calibration Workbench / VNA 校准与验证工作台，Python 项目名为 vna-calibration-workbench。通用算法按 ToDo.md 规划，不因名称变化而宣称已支持。GitHub 仓库地址仍为 fishbupt/vmc_sparam_viewer。历史验证记录保留当时版本；QSettings 的已有命名空间是兼容标识，不随产品更名而改变。
+产品名称统一为 VNA Calibration Workbench / VNA 校准与验证工作台，Python 项目名为 vna-calibration-workbench。通用算法按 docs/plans/roadmap.md 规划，不因名称变化而宣称已支持。GitHub 仓库地址仍为 fishbupt/vmc_sparam_viewer。历史验证记录保留当时版本；QSettings 的已有命名空间是兼容标识，不随产品更名而改变。
 
 ## 环境与入口
 
 - Python 3.10+；依赖见 pyproject.toml / requirements.txt：NumPy、SciPy、PyQt6、Matplotlib。
 - 在仓库根目录运行 `uv run python main.py`，或用虚拟环境安装 requirements.txt 后直接运行 main.py。
-- 支持 Windows / PyCharm 直接运行 main.py；保持当前根目录模块导入方式，不引入必须用 `python -m` 才能启动的相对导入。
+- 支持 Windows / PyCharm 直接运行 main.py；根目录 main.py 只启动 vna_workbench.app.application；内部使用包绝对导入，不要求用户用 `python -m` 才能启动。
 - 不提交 .venv、__pycache__、IDE 配置、个人标准套、真实采集记录和本次生成的结果目录。
 
 ## 模块边界
 
-| 文件 | 职责 |
+| 模块 | 职责 |
 | --- | --- |
-| frequency_mapping.py | 生成、表征共用的 RF / LO / IF 映射及验证 |
-| characterization.py | 标准解析 / 求值、SOL 求解、输入误差消除、连续开方、结果与诊断导出 |
-| simulation.py | 独立正向模型、可复现噪声、真值及六个测量文件生成 |
-| vmc_simulation.py / vmc_simulation_gui.py | VMC 六个原始测量正向生成、标准定义/真值/21误差项导出与校准窗口联动 |
-| vmc_calibration.py | 四组 SOL / 两频段普通 Thru / 变频 ETF 求解，单向 MUT 校准，校准包与结果导出 |
-| vmc_calibration_gui.py | 两页签：计算 VMC 校准误差项 / 校准 MUT；QThread 调用与主界面联动 |
-| parser.py | Dataset、Touchstone / S2PX 解析、数据变换 |
-| comparison_page.py | 独立 A/B 页面、原始点叠加及共享验证报告 |
-| comparison.py | 唯一频率匹配、复数 / 幅度 / 相位差、统计与导出 |
-| main.py | 主窗口、查看与绘图、功能入口 |
-| viewer_gui.py / workbench_gui.py | 默认查看页布局、固定流程导航与共享 VMC 页面适配；不复制算法 |
-| characterize_gui.py / simulate_gui.py / compare_gui.py | 参数收集、QThread 调用、结果展示与交互 |
-| tests/ | 数值、文件回归；独立的 Qt offscreen 联动检查 |
-| examples/ | 已注明来源及限制的演示 / Keysight 回归输入 |
+| vna_workbench/app/ | 应用启动、校准类型注册及显式生成结果到校准输入的映射 |
+| vna_workbench/data/ | 数据容器、S1P/S2P/S2PX 解析、公共 S2P 写出、归档与结果包导出 |
+| vna_workbench/core/ | 标准求值、SOL / 反射校准、频率转换与数值防护 |
+| vna_workbench/calibration/vmc/ | 表征、21 项求解、MUT 修正、输入验证与 VMC 校准包 |
+| vna_workbench/calibration/trl/ | 仅预留包，TRL 算法仍未实现 |
+| vna_workbench/simulation/ | 两轮表征与 VMC 的独立正向生成；不调用校准求解数学 |
+| vna_workbench/analysis/ | 显示变换、分段、匹配与比较、查看数据 CSV |
+| vna_workbench/gui/ | 主窗口、持久工作区、查看 / 比较页面、VMC 工作流、通用 worker |
+| tests/core/、tests/vmc/、tests/gui/ | 共用数值 / 文件、VMC 数值和 Qt 联动检查 |
+| docs/algorithms/ | 仅公式与对应代码 / 函数；按 common / vmc 分类 |
+| docs/guides/、docs/validation/、docs/plans/ | 使用说明、历史验证及开发计划，禁止混入算法公式页 |
+
+当前映射及迁移方式见 [模块结构](docs/architecture/module_structure.md)，文档入口见 [docs/README.md](docs/README.md)。
 
 GUI 不得复制另一套算法公式。耗时计算和文件 I/O 继续放到后台线程。控件修改后使当前结果及导出失效；已载入主窗口的数据是独立快照。QSettings 记录最近参数和目录，非法旧插值设置回退为 cubic_ri，不能恢复已删除的选项。
 
@@ -60,12 +59,12 @@ GUI 不得复制另一套算法公式。耗时计算和文件 I/O 继续放到�
 
 ```text
 uv run python -m unittest discover -s tests -v
-uv run python tests/gui_simulation_smoke.py
-uv run python tests/gui_vmc_calibration_smoke.py
-uv run python tests/gui_viewer_display_smoke.py
-uv run python tests/gui_vmc_simulation_smoke.py
-uv run python tests/gui_workbench_smoke.py
-uv run python tests/gui_analysis_smoke.py
+uv run python tests/gui/gui_simulation_smoke.py
+uv run python tests/gui/gui_vmc_calibration_smoke.py
+uv run python tests/gui/gui_viewer_display_smoke.py
+uv run python tests/gui/gui_vmc_simulation_smoke.py
+uv run python tests/gui/gui_workbench_smoke.py
+uv run python tests/gui/gui_analysis_smoke.py
 ```
 
 算法 / 映射修改需覆盖上下变频、两种插值、两种幅相插值跨 ±180° / 多圈解缠绕、样条幅相多项式解析恢复与负幅度拒绝、线性幅度而非 dB、零幅度相位拒绝、精确节点原值保留、非理想标准、无噪声闭环、原始 / 已修正第二轮、输出轴 / 注释 / JSON 一致性、外推拒绝及独立正向波量方程。不要仅以生成器和提取器相互吻合作为正确性依据。
@@ -96,7 +95,7 @@ GUI 检查控件只有两种插值、方向改变后的结果失效、生成到�
 ## 主界面导航约定（v1.8.0）
 
 - 默认进入查看与比较，无需先建项目。固定流程导航与数据侧栏分离，校准导航共享同一个 VMC 输入 / 校准实例；不因换页重复求解或使结果失效。
-- v1.8.1 校准类型注册在 workbench_gui.py；菜单与顶栏选择同步。未实现类型仅显示占位，不得复用 VMC 表单执行它们。数据查看 / 差异统计独立，切回 VMC 保留原状态，后台执行期间禁止切换类型。
+- v1.8.1 校准类型注册在 vna_workbench/app/calibration_registry.py；菜单与顶栏选择同步。未实现类型仅显示占位，不得复用 VMC 表单执行它们。数据查看 / 差异统计独立，切回 VMC 保留原状态，后台执行期间禁止切换类型。
 - 双端口曲线位置为 S11 / S21 在上、S12 / S22 在下；`Window.axes` 数组仍按 PARAMS 顺序，避免破坏菜单、Y 轴和导出索引。
 - 勾选控制叠加，选中控制表格 / 元数据 / 导出；颜色按数据集固定。叠加不匹配或插值，各文件的横轴 / 分段设置独立，必须提示确认 RF / IF 含义。
 - 验证报告复用 CompareDialog 的数值计算与导出，不能绕过 A 的 StimulusFreq 约束。通用算法、项目文件与自动容差判定尚未实现。
@@ -114,3 +113,7 @@ GUI 检查控件只有两种插值、方向改变后的结果失效、生成到�
 ## 单文件样式约定（v1.8.3）
 
 单文件曲线统一蓝色实线，不按文件 / 参数分配颜色和形状，不显示点标记；文件库文字颜色统一。仅比较模式用颜色、线型和图例区分 A/B。GUI / 包版本 1.8.3，算法报告版本保持 1.7.0。
+
+## 结构重构约定（v1.9.0）
+
+根目录仅保留 main.py 入口，旧平铺模块不继续作为导入入口；迁移映射见架构文档。公共算法函数签名、文件 schema、算法报告版本 1.7.0 和旧 QSettings 命名空间保持。不得引入从 core/data/analysis/calibration 到 GUI 的依赖。生成器只在 SavedVMCSimulation 的显式一键载入适配方法中委托 app/workflows.py，不在正向计算中调用校准器。历史验证记录的旧模块名与测试结果保留，链接指向实际迁移后的路径。

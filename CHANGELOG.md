@@ -1,3 +1,12 @@
+# v1.9.0
+
+- 将平铺模块迁入 vna_workbench 包：分离 app、data、core、calibration、simulation、analysis 和 gui；根 main.py 仅启动，保留 PyCharm 直接运行。
+- 提取共用 SOL / 反射补偿、标准求值、数据模型、S2P 写出与后台 worker；VMC 拆成混频器表征、误差项求解、DUT 校准及校准包模块。
+- 正向仿真仍独立；生成结果到校准输入的显式映射置于 app/workflows.py。数学公式、文件 schema、算法报告版本和 QSettings 命名空间不变。
+- 算法文档按 common / vmc 拆分；使用、历史验证、开发计划分别迁到 guides、validation/releases、plans，并新增文档索引与模块迁移映射。
+- 测试按 core / vmc / gui 分类，更新引用；增加包边界与启动入口检查，项目可安装并提供命令入口。
+- TRL 仅预留包和待实现菜单；算法仍未实现。旧平铺 import 路径需按迁移表更新。
+
 # 未发布 · VMC 算法说明（2026-10-13）
 
 - 新增 `vmc_algorithms.md`，按 Enhanced 现有源码整理两轮 SOL 表征、四组 SOL、普通 THRU、完整变频 ETF 和单向 MUT 校准公式。

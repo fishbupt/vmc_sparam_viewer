@@ -1,4 +1,4 @@
-# VNA Calibration Workbench · VNA 校准与验证工作台 · v1.8.3
+# VNA Calibration Workbench · VNA 校准与验证工作台 · v1.9.0
 
 启动默认进入 **数据查看 → 单文件查看**，支持独立打开 S2P / Keysight Converter Sweep Data S2PX；**双文件比较**独立选择 A/B，显示叠加曲线及匹配频点后的差异统计。还提供 VMC 研发流程：生成仿真数据、表征校准混频器、计算误差项和校准 MUT。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。通用 SOLT / TRL / 多端口等算法仍属于升级规划，当前文件查看器仍面向双端口数据。
 
@@ -7,15 +7,25 @@
 - 软件名称：**VNA Calibration Workbench**。
 - 中文名称：**VNA 校准与验证工作台**。
 - Python 项目名称：`vna-calibration-workbench`。
-- [《VNA 校准与验证工作台 · VMC 使用说明》](docs/vmc_calibration.md)。
-- [VMC 核心算法代码说明](vmc_algorithms.md)：校准混频器表征、21 条误差项求解和 MUT 误差补偿。
-- [通用 VNA 校准验证功能升级清单](ToDo.md)。
+- [《VNA 校准与验证工作台 · VMC 使用说明》](docs/guides/vmc_calibration.md)。
+- [VMC 核心算法代码说明](docs/algorithms/vmc/README.md)：校准混频器表征、21 条误差项求解和 MUT 误差补偿。
+- [通用 VNA 校准验证功能升级清单](docs/plans/roadmap.md)。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
 
+## v1.9.0：模块与文档结构重构
+
+根目录 `main.py` 只负责启动；数值、数据、算法、仿真、分析与 GUI 迁入 `vna_workbench` 包。保留 `python main.py` / PyCharm 直接运行及原有界面行为。安装项目后也可运行 `vna-calibration-workbench`。
+
+- [文档索引](docs/README.md)：分别进入算法、使用、验证和计划。
+- [模块结构与迁移映射](docs/architecture/module_structure.md)：旧导入路径迁移到新包；现有函数签名不变。
+- [本次验证记录](docs/validation/releases/validation_v1.9.0.md)。
+
+此次不改变数学公式、输出文件名、文件 schema、QSettings 或支持范围；算法报告版本仍为 1.7.0，TRL 仍待实现。下方旧版本段落中的旧模块名属于历史说明，当前导入路径以架构文档为准。
+
 ## v1.8.3：单文件曲线统一样式
 
-单文件查看的所有 S 参数均使用蓝色实线，无采样点形状，切换文件不改变曲线样式；共享文件库采用统一文字颜色。双文件比较继续用蓝色实线 A / 橙色虚线 B 区分，保留图例。数据、幅相与 Y 轴功能不变。验证见 [docs/validation_v1.8.3.md](docs/validation_v1.8.3.md)。
+单文件查看的所有 S 参数均使用蓝色实线，无采样点形状，切换文件不改变曲线样式；共享文件库采用统一文字颜色。双文件比较继续用蓝色实线 A / 橙色虚线 B 区分，保留图例。数据、幅相与 Y 轴功能不变。验证见 [验证记录 validation_v1.8.3.md](docs/validation/releases/validation_v1.8.3.md)。
 
 ## v1.8.2：独立单文件查看与双文件比较
 
@@ -27,7 +37,7 @@ GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不�
 - 在共享文件库中查看第三份文件不会改变 A/B；追加或移除无关文件保留比较结果。改动 A/B、频率轴、分段或容差会清空旧统计与 CSV 导出。单文件页 **与另一文件比较…** 将当前文件送入 A；**验证报告**打开同一个比较实例及已有结果。
 - 同名 S2P / S2PX 的历史独立窗口仍可从工具菜单调用。此版仍仅支持双端口文件，不表示通用多端口解析或新校准算法已实现。
 
-验证见 [docs/validation_v1.8.2.md](docs/validation_v1.8.2.md)。以下版本段落为历史记录，当前数据查看行为以 v1.8.2 为准。
+验证见 [验证记录 validation_v1.8.2.md](docs/validation/releases/validation_v1.8.2.md)。以下版本段落为历史记录，当前数据查看行为以 v1.8.2 为准。
 
 ## v1.8.1：校准类型选择
 
@@ -47,7 +57,7 @@ GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不�
 - **验证报告** 复用原有任意文件差异计算与 CSV 导出，不额外新增算法或自动容差结论。A 需有 StimulusFreq，B 显式选择实际频率轴；仅比较唯一匹配频点。校准结果和真值如需作为 A，可先导出 / 打开 S2P。
 - 底部日志默认折叠，汇总主窗口与嵌入式 VMC 流程记录；后台线程运行时禁止关闭主窗口，状态栏显示进度。
 
-界面框架与现有 VMC 能力先行迁移，通用校准算法按 [ToDo.md](ToDo.md) 后续扩展。校准 / 仿真数值模型与原有 v1.7.0 数据格式保持一致；算法报告内版本仍标识 v1.7.0。验证见 [docs/validation_v1.8.0.md](docs/validation_v1.8.0.md)。
+界面框架与现有 VMC 能力先行迁移，通用校准算法按 [开发路线图](docs/plans/roadmap.md) 后续扩展。校准 / 仿真数值模型与原有 v1.7.0 数据格式保持一致；算法报告内版本仍标识 v1.7.0。验证见 [验证记录 validation_v1.8.0.md](docs/validation/releases/validation_v1.8.0.md)。
 
 ## v1.7.0：生成 VMC 原始测量 SNP
 
@@ -66,13 +76,13 @@ GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不�
 
 每次创建独立输出目录，不覆盖旧结果。**将本轮文件载入 VMC 校准窗口** 自动填入配套定义、原始测量、RF/LO/IF 与文件横轴；计算误差项后即可校准 MUT。右侧预览和主界面同时提供 MUT 真值与原始测量的 VC21/SM21。Keysight 与自研校准都必须使用与生成器一致的标准定义，不能直接套用机械校准套默认偏移。普通 S2P 不自行执行变频；Keysight 的 Dummy DUT 接收器读取行为仍需现场确认。
 
-验证见 [docs/validation_v1.7.0.md](docs/validation_v1.7.0.md)。
+验证见 [验证记录 validation_v1.7.0.md](docs/validation/releases/validation_v1.7.0.md)。
 
 ## v1.6.3：主界面显示与 Y 轴范围
 
 在任意 S 参数子图内右键，通过“显示”菜单统一切换幅度（dB / 线性）、相位、解缠绕相位、实部或虚部；与左侧“显示”选择同步。解缠绕按原始连续分段计算，零幅度处相位未定义，不跨这些位置展开。
 
-右键可对当前子图选择 **Y 轴 AutoScale** 或输入手动最小 / 最大值；左侧 **Y 轴设置…** 可选择单个或全部 S 参数。手动范围必须是有限数值且最小值小于最大值；范围按显示模式分别保留，在本次会话内切换文件和分段后继续生效。AutoScale 恢复当前数据 / 分段的自动范围。验证见 [docs/validation_v1.6.3.md](docs/validation_v1.6.3.md)。
+右键可对当前子图选择 **Y 轴 AutoScale** 或输入手动最小 / 最大值；左侧 **Y 轴设置…** 可选择单个或全部 S 参数。手动范围必须是有限数值且最小值小于最大值；范围按显示模式分别保留，在本次会话内切换文件和分段后继续生效。AutoScale 恢复当前数据 / 分段的自动范围。验证见 [验证记录 validation_v1.6.3.md](docs/validation/releases/validation_v1.6.3.md)。
 
 ## v1.6.2：VMC 校准窗口左右布局
 
@@ -95,7 +105,7 @@ GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不�
 
 校准包包含 JSON 配置 / 输入映射 / SHA256 和复数误差项，可保存后独立重载，无需原始标准文件；MUT 结果包含 S2P、VC21 复数 CSV、原始数据、RF / IF / LO 映射和报告。**MUT 按单向 / 忽略反向耦合公式校准；S12 未校准，S2P 中的零值仅为明确标记的占位。** 本轮假设传输泄漏为零，未独立采集接收器 / 开关项。
 
-详细操作、公式和输入要求见 [docs/vmc_calibration.md](docs/vmc_calibration.md)，验证记录见 [docs/validation_v1.6.0.md](docs/validation_v1.6.0.md)。
+详细操作、公式和输入要求见 [VMC 使用说明](docs/guides/vmc_calibration.md)，验证记录见 [验证记录 validation_v1.6.0.md](docs/validation/releases/validation_v1.6.0.md)。
 
 ## v1.5.2 更新：两种插值均采用幅度 / 解缠绕相位
 
@@ -115,7 +125,7 @@ gamma_interp = mag_interp * np.exp(1j * phase_interp)
 
 精确节点优先、禁止外推、not-a-knot 边界不变。恒零 LOAD 保持零；非恒零标准含零幅度且需要插值时，两种方式都明确报错，因为相位无法定义；全部命中精确节点则返回原始值。样条产生负幅度时明确拒绝，不钳位、不取绝对值；可改用幅相线性或提供更合适的标准定义。解缠绕使用 NumPy 默认规则，不能恢复采样不足造成的真实相位混叠。
 
-47 项数值测试通过，当前验证见 `docs/validation_v1.5.2.md`。v1.5.0 / v1.5.1 的验证记录保留，对应各自当时的求值行为。
+47 项数值测试通过，当前验证见 `docs/validation/releases/validation_v1.5.2.md`。v1.5.0 / v1.5.1 的验证记录保留，对应各自当时的求值行为。
 
 ## v1.5 更新
 
@@ -210,7 +220,7 @@ measured = clean + noise
 `simulation_truth.csv` 保留 RF/IF、实际 EDF/ESF/ERF、四个真值 S、每个标准的求值 Γ、每路无噪声响应、含噪声响应及实际加噪量。JSON 保留全部配置、标准原始路径与 SHA256、输出 SHA256、求值边界和噪声信息。
 
 ```python
-from simulation import SimulationOptions, generate_files
+from vna_workbench.simulation.mixer_characterization import SimulationOptions, generate_files
 saved = generate_files(
     [open_s1p, short_s1p, load_s1p],
     output_parent,  # 已存在目录；函数新建独立子目录
@@ -227,7 +237,7 @@ print(saved.directory)
 
 新增 `simulation.py`（模型与文件层）、`simulate_gui.py`（配置/后台任务/预览），原查看、表征与比较功能保留。参数及最近标准/输出目录通过 QSettings 保存。
 
-本版 47 项数值回归通过：包括上下变频、两种插值闭环、相位跨 ±180° / 多圈解缠绕、线性幅度规则、三次样条幅相多项式解析值 / 多圈相位 / 负幅度拒绝、精确节点原值保持、零幅度边界、导出实际插值坐标记录、解析 / 比较 / Keysight 下变频回归。Qt offscreen 联动检查通过。详见 `docs/validation_v1.5.2.md`；未在 Windows/PNA 现场运行，上变频 Keysight 对照待验证。
+本版 47 项数值回归通过：包括上下变频、两种插值闭环、相位跨 ±180° / 多圈解缠绕、线性幅度规则、三次样条幅相多项式解析值 / 多圈相位 / 负幅度拒绝、精确节点原值保持、零幅度边界、导出实际插值坐标记录、解析 / 比较 / Keysight 下变频回归。Qt offscreen 联动检查通过。详见 `docs/validation/releases/validation_v1.5.2.md`；未在 Windows/PNA 现场运行，上变频 Keysight 对照待验证。
 
 ### 操作顺序
 
@@ -269,7 +279,9 @@ print(saved.directory)
 输出高精度 Hz/S/RI S2P（17 位有效数字，顺序 S11/S21/S12/S22）、自研 CSV S2PX、`sol_diagnostics.csv`、`characterization_report.json`。S2PX 仿照已知布局，不是 Keysight 生成文件；零幅度无法完整表达 DB S2PX 时诊断包仍保留 RI S2P。
 
 ```python
-from characterization import Options, characterize, export_s2p, export_bundle
+from vna_workbench.calibration.vmc.models import Options
+from vna_workbench.calibration.vmc.mixer_characterization import characterize
+from vna_workbench.calibration.vmc.characterization_io import export_s2p, export_bundle
 result = characterize(
     measurement_paths,  # [input_O,input_S,input_L,output_O,output_S,output_L]
     [open_s1p, short_s1p, load_s1p],  # 两轮共用
@@ -287,7 +299,7 @@ export_bundle(result, 'my_mixer_validation.zip')
 - `examples/characterization_demo`：六个合成测量＋三个明确标为理想演示的标准定义，覆盖 RF/IF；载入演示按钮可直接计算。不是用户物理校准件。
 - `examples/keysight_validation`：本次会话的六个仿真文件、三个标准定义和当前 Keysight 表征。Short 是 5–20 GHz 验证频带摘录；来源与限制写在目录 README 和输入注释中。实际工作建议使用完整原始标准文件。
 - 本次 Keysight 数据全 201 点使用 cubic_ri 的最大复数差约 1.87×10⁻⁷；不是仪器测量准确度规格，剩余残差和 Keysight 内部求值方式尚待核实。
-- 当前数值和界面验证见 `docs/validation_v1.5.2.md`；旧版本记录保留。
+- 当前数值和界面验证见 `docs/validation/releases/validation_v1.5.2.md`；旧版本记录保留。
 
 ## Windows 快速启动
 
@@ -360,19 +372,13 @@ GUI 在 Linux Qt offscreen 环境进行启动/绘图/各显示模式和轴切换
 
 ## 文件结构
 
-- main.py：PyQt6 主窗口、后台任务、Matplotlib 绘图。
-- characterization.py：提取核心；simulate_gui.py / characterize_gui.py：配置及联动。
-- simulation.py：正向仿真、噪声、文件生成。
-- frequency_mapping.py：上下变频映射，生成和表征共用。
-- comparison.py / compare_gui.py：唯一频率匹配、统计和比较界面。
-- AGENTS.md：后续 AI / 开发者的工程约定。
-- parser.py：数据模型、两种格式解析、数值变换和 CSV 导出，无 GUI 依赖。
-- tests/test_parser.py：解析与数值回归用例。
-- examples/：本次文本样例。
-- pyproject.toml、requirements.txt：依赖声明。
-
-参考格式：IBIS Touchstone 标准 https://www.ibis.org/touchstone_ver2.0/ 。
-S2PX 解析依据用户提供文件结构；未假设其与标准 Touchstone 等价。
+- `main.py` → `vna_workbench/app/application.py`：启动入口。
+- `vna_workbench/core/`、`data/`、`analysis/`：共用数值、文件及数据比较。
+- `vna_workbench/calibration/vmc/`：混频器表征、误差项求解和 MUT 校准。
+- `vna_workbench/simulation/`：独立正向生成。
+- `vna_workbench/gui/`：主窗口、页面及后台任务。
+- `tests/core/`、`tests/vmc/`、`tests/gui/`：分层回归。
+- `docs/`：按算法、使用、验证和计划分类。
 
 ## v1.1：同名 S2P / S2PX 比较
 
