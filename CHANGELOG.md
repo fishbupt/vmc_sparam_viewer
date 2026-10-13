@@ -1,3 +1,13 @@
+# trl 分支结构同步（2026-10-13）
+
+- 合入 Enhanced v1.9.0 的代码与文档目录重构，保持与 Enhanced 相同的数值 / GUI 代码。
+- 工作清单迁至 docs/plans/trl_worklist.md，更新计划中的代码与测试路径、README / 文档索引入口。TRL 算法仍未实现。
+
+# 未发布 · TRL 分支规划（2026-10-13）
+
+- 从 Enhanced 1.8.3 基准创建 `trl` 分支，新增 `docs/plans/trl_worklist.md`，细化基础双端口 TRL 的模型、输入、生成器、求解、GUI、独立参考与 Keysight 验证任务。
+- README / ToDo 增加清单入口；本次仅文档规划，软件版本和算法行为不变，TRL 菜单仍为待实现。
+
 # v1.9.0
 
 - 将平铺模块迁入 vna_workbench 包：分离 app、data、core、calibration、simulation、analysis 和 gui；根 main.py 仅启动，保留 PyCharm 直接运行。

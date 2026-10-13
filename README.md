@@ -10,6 +10,7 @@
 - [《VNA 校准与验证工作台 · VMC 使用说明》](docs/guides/vmc_calibration.md)。
 - [VMC 核心算法代码说明](docs/algorithms/vmc/README.md)：校准混频器表征、21 条误差项求解和 MUT 误差补偿。
 - [通用 VNA 校准验证功能升级清单](docs/plans/roadmap.md)。
+- [TRL 开发与验证工作清单](docs/plans/trl_worklist.md)：本分支已同步 v1.9.0 结构，算法仍待实现。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
 

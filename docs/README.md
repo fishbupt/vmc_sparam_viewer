@@ -9,6 +9,6 @@
 | 验证记录 | [v1.9.0 结构回归](validation/releases/validation_v1.9.0.md) | 数值、GUI、入口、安装及结构检查 |
 | 开发计划 | [通用路线图](plans/roadmap.md) | 未实现算法与工程任务 |
 
-TRL 的工作清单在 `trl` 分支的 `docs/plans/trl_worklist.md`，本分支仍无 TRL 算法实现，不创建空的算法公式文档。
+本分支的 [TRL 工作清单](plans/trl_worklist.md) 已按 v1.9.0 结构更新；TRL 算法仍未实现，不创建空的算法公式文档。
 
 `validation/releases/` 保存各历史版本的真实验证记录。旧模块名和版本号保留当时语义；当前源文件路径和测试命令以架构说明及根目录 README 为准。
