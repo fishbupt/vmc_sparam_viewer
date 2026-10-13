@@ -8,6 +8,7 @@
 - 中文名称：**VNA 校准与验证工作台**。
 - Python 项目名称：`vna-calibration-workbench`。
 - [《VNA 校准与验证工作台 · VMC 使用说明》](docs/vmc_calibration.md)。
+- [VMC 核心算法代码说明](vmc_algorithms.md)：校准混频器表征、21 条误差项求解和 MUT 误差补偿。
 - [通用 VNA 校准验证功能升级清单](ToDo.md)。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
