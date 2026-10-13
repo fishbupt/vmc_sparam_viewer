@@ -9,6 +9,7 @@
 - Python 项目名称：`vna-calibration-workbench`。
 - [《VNA 校准与验证工作台 · VMC 使用说明》](docs/vmc_calibration.md)。
 - [通用 VNA 校准验证功能升级清单](ToDo.md)。
+- [TRL 分支开发与验证工作清单](workList.md)：基础双端口 TRL → 独立仿真 / 求解 → GUI → Keysight 对照；当前仅完成规划，算法尚未实现。
 
 GitHub 仓库地址保持 `fishbupt/vmc_sparam_viewer`，现有运行命令不变。界面设置继续使用原有配置存储，保留最近目录和窗口状态。
 
