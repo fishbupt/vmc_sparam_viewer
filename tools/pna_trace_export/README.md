@@ -1,4 +1,4 @@
-# PNA 窗口 Trace 导出工具 · v1.0.2
+# PNA 窗口 Trace 导出工具 · v1.0.3
 
 独立命令行脚本，可复制此目录到其他电脑运行，无需安装 VNA Calibration Workbench 或 GUI 依赖。Python 3.10+，需安装支持 HiSLIP 的 VISA 实现（例如 Keysight IO Libraries Suite）。
 
@@ -42,22 +42,26 @@ PyCharm 可选择 `tools/pna_trace_export/.venv/Scripts/python.exe` 作为解释
 ## 命名与文件含义
 
 - `Tr1_S11.s1p`、`Tr6_a2_over_b2,1.s1p`，不包含显示格式 LogM。
-- 窗口内部 Trace ID 与屏幕 Tr 编号可能不同；脚本选择 Trace 后查询实际测量编号，不直接使用窗口目录编号命名。
+- 窗口内部 Trace ID 与屏幕 Tr 编号可能不同；脚本通过测量目录及所属窗口 / Trace 建立映射，再查询测量自身的通道，不依赖前面板活动状态。
 - Windows 不允许文件名包含 `/`，替换为 `_over_`；原参数保留在文件注释和 manifest 中。仪器可能返回等价物理接收机名称，而非屏幕上的逻辑 a/b 名称。
 - 每个文件仅有频率、实部、虚部，使用 `# Hz S RI R 50` 和 17 位有效数字，不丢失相位。
 - **S21、接收机比值等借用 S1P 的 S11 列存储，并非真实单端口网络。** R 50 仅为文件约定，未进行重归一化，不能直接当作物理 S11 使用。
 - 导出 SDATA，校准状态遵循仪器当前设置；不等同于显示变换、平滑、Data/Memory 运算后的屏幕曲线。不导出 Memory 曲线；启用 Equation 的 Trace 会报错跳过。
 - 面向默认频率横轴（Hz）的 LIN / LOG / SEGM 扫描；要求频率严格递增。功率 / CW / 非默认横轴不属于支持范围。
 - 脚本不触发新扫频、不冻结扫频，读取现有测量数据；如要求各 Trace 对应同一完整采集状态，请先在 PNA 完成扫频并 Hold。
-- 激活窗口 2 后依次选择 Trace，结束时保留最后一次选择；临时切换 ASCII 数据传输，结束时恢复原 FORM:DATA。
+- 激活窗口 2，使用显式测量编号读数据；临时切换 ASCII 数据传输，正常结束时恢复原 FORM:DATA。查询超时后立即停止，不继续使用可能失步的会话，也不发送格式恢复命令。
 
 ## SCPI 流程
 
-`DISP:WIND2:CAT?` → `DISP:WIND2:TRAC<t>:SEL` → `SYST:ACT:CHAN?` / `SYST:ACT:MEAS:NUMB?` → `CALC<c>:MEAS<m>:PAR?` → `DATA:X?` / `DATA:SDATA?`。
+`DISP:WIND2:CAT?` → `SYST:MEAS:CAT?` → `SYST:MEAS<m>:WIND?` / `TRAC?` → `SYST:MEAS<m>:CHAN?` → `CALC<c>:MEAS<m>:PAR?` → `DATA:X?` / `DATA:SDATA?`。
+
+通道编号必须大于 0；无效或缺失映射明确报错，不默认猜测 Channel 1。控制台打印实际窗口 Trace / 测量 / 通道映射，查询失败包含具体命令。依据 [Keysight System SCPI 文档](https://helpfiles.keysight.com/csg/NA520xA/Programming/GP-IB_Command_Finder/System.htm)。
 
 依赖 Keysight PNA 固件对这些命令的支持；遇到不支持命令会报错，不编造或补零数据。
 
 ## 验证
+
+v1.0.3：回归覆盖多通道与其他窗口的 Trace 映射、拒绝通道 0、单曲线实虚部及文件名、查询失败报告具体命令。尚待实际 PNA 验证。
 
 v1.0.2：修复 PyVISA ResourceManager 不支持上下文管理器的问题；使用 `contextlib.closing`，先关闭仪器连接，再关闭资源管理器。回归覆盖正常导出、查询失败和连接失败的资源释放。可运行 `uv run --locked python -m unittest discover -s tests -v`。
 

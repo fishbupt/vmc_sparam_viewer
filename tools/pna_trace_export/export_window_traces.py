@@ -39,14 +39,25 @@ def safe_name(name):
     return re.sub(r'[\\:*?"<>|\x00-\x1f]', '_', name).rstrip(' .')
 
 
+class ScpiTransportError(RuntimeError):
+    """查询失败后停止使用可能已失步的响应流。"""
+
+
+def read_response(inst, command):
+    try:
+        return inst.query(command).strip()
+    except Exception as exc:
+        raise ScpiTransportError(f'{command}: 查询失败 ({exc})；本次导出已停止') from exc
+
+
 def check_error(inst, command):
-    response = inst.query('SYST:ERR?').strip()
+    response = read_response(inst, 'SYST:ERR?')
     if int(response.split(',', 1)[0]) != 0:
         raise RuntimeError(f'{command}: {response}')
 
 
 def query(inst, command):
-    result = inst.query(command).strip()
+    result = read_response(inst, command)
     check_error(inst, command)
     return result
 
@@ -64,10 +75,34 @@ def numbers(inst, command):
     return values
 
 
-def export_trace(inst, window, trace, output):
-    write(inst, f'DISP:WIND{window}:TRAC{trace}:SEL')
-    channel = int(query(inst, 'SYST:ACT:CHAN?'))
-    measurement = int(query(inst, 'SYST:ACT:MEAS:NUMB?'))
+def window_measurements(inst, window):
+    """根据测量自身的所属窗口和 Trace ID 建立映射，不依赖前面板选择。"""
+    catalogue = unquote(query(inst, 'SYST:MEAS:CAT?'))
+    mapping = {}
+    for value in catalogue.split(','):
+        if not value.strip():
+            continue
+        measurement = int(value)
+        if measurement <= 0:
+            raise ValueError(f'测量目录返回非法编号: {measurement}')
+        if int(query(inst, f'SYST:MEAS{measurement}:WIND?')) != window:
+            continue
+        trace = int(query(inst, f'SYST:MEAS{measurement}:TRAC?'))
+        if trace <= 0 or trace in mapping:
+            raise ValueError(f'窗口 {window} 的 Trace 映射非法或重复: {trace}')
+        mapping[trace] = measurement
+    return mapping
+
+
+def export_trace(inst, window, trace, output, measurement=None):
+    if measurement is None:
+        measurement = window_measurements(inst, window).get(trace)
+    if measurement is None or measurement <= 0:
+        raise ValueError(f'窗口 {window} Trace {trace} 未找到有效测量编号')
+    channel = int(query(inst, f'SYST:MEAS{measurement}:CHAN?'))
+    if channel <= 0:
+        raise ValueError(f'测量 {measurement} 返回无效通道 {channel}，不发送 CALC{channel} 命令')
+    print(f'映射: Window {window} Trace {trace} → 测量 {measurement}, Channel {channel}')
     prefix = f'CALC{channel}:MEAS{measurement}'
     parameter = unquote(query(inst, f'{prefix}:PAR?'))
     # 参数中可能有逗号（源端口），不能把整个返回字符串再按逗号拆开。
@@ -153,22 +188,31 @@ def main():
                 if not traces or any(t <= 0 for t in traces):
                     raise RuntimeError('窗口中没有可导出的 Trace')
                 print(f'窗口 {args.window}: {traces}')
+                mapping = window_measurements(inst, args.window)
                 old_format = query(inst, 'FORM:DATA?')
+                transport_failed = False
                 try:
                     write(inst, 'FORM:DATA ASC,0')
                     for trace in traces:
                         try:
-                            record = export_trace(inst, args.window, trace, output)
+                            if trace not in mapping:
+                                raise ValueError(f'窗口 Trace {trace} 没有匹配测量，不猜测其通道')
+                            record = export_trace(inst, args.window, trace, output, mapping[trace])
                             report['traces'].append(record)
                             print(f"已保存 {record['file']} ({record['points']} 点)")
                         except Exception as exc:
                             report['errors'].append(dict(window_trace_id=trace, error=str(exc)))
                             print(f'Trace {trace} 导出失败: {exc}', file=sys.stderr)
                             # 超时后响应流可能失步，不能继续把别的响应当作数据。
-                            if isinstance(exc, pyvisa.errors.VisaIOError):
+                            if isinstance(exc, (ScpiTransportError, pyvisa.errors.VisaIOError)):
+                                transport_failed = True
                                 raise
+                except ScpiTransportError:
+                    transport_failed = True
+                    raise
                 finally:
-                    inst.write(f'FORM:DATA {old_format}')
+                    if not transport_failed:
+                        inst.write(f'FORM:DATA {old_format}')
     except Exception as exc:
         report['errors'].append(dict(error=str(exc)))
         print(f'错误: {exc}', file=sys.stderr)
