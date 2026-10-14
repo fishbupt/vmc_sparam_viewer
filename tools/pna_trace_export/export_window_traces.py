@@ -88,31 +88,12 @@ def activate_window(inst, window, trace):
     return active
 
 
-def window_measurements(inst, window):
-    """根据测量自身的所属窗口和 Trace ID 建立映射，不依赖前面板选择。"""
-    catalogue = unquote(query(inst, 'SYST:MEAS:CAT?'))
-    mapping = {}
-    for value in catalogue.split(','):
-        if not value.strip():
-            continue
-        measurement = int(value)
-        if measurement <= 0:
-            raise ValueError(f'测量目录返回非法编号: {measurement}')
-        owner = int(query(inst, f'SYST:MEAS{measurement}:WIND?'))
-        print(f'测量 {measurement} 所属窗口: {owner} (目标 {window})')
-        if owner != window:
-            continue
-        trace = int(query(inst, f'SYST:MEAS{measurement}:TRAC?'))
-        if trace <= 0 or trace in mapping:
-            raise ValueError(f'窗口 {window} 的 Trace 映射非法或重复: {trace}')
-        mapping[trace] = measurement
-    return mapping
-
-
-def export_trace(inst, window, trace, output, measurement=None):
-    if measurement is None:
-        measurement = window_measurements(inst, window).get(trace)
-    if measurement is None or measurement <= 0:
+def export_trace(inst, window, trace, output):
+    # 对窗口目录的每一条 Trace 明确选择并等待完成，再读当前测量编号。
+    # 不再查询全局测量目录或 SYST:MEAS<n>:WIND? 进行归属筛选。
+    activate_window(inst, window, trace)
+    measurement = int(query(inst, 'SYST:ACT:MEAS:NUMB?'))
+    if measurement <= 0:
         raise ValueError(f'窗口 {window} Trace {trace} 未找到有效测量编号')
     channel = int(query(inst, f'SYST:MEAS{measurement}:CHAN?'))
     if channel <= 0:
@@ -203,18 +184,13 @@ def main():
                     raise RuntimeError('窗口中没有可导出的 Trace')
                 print(f'窗口 {args.window}: {traces}')
                 report['active_window'] = activate_window(inst, args.window, traces[0])
-                mapping = window_measurements(inst, args.window)
-                if not mapping:
-                    raise ValueError(f'测量目录没有返回窗口 {args.window} 的测量，检查上方所属窗口回读日志')
                 old_format = query(inst, 'FORM:DATA?')
                 transport_failed = False
                 try:
                     write(inst, 'FORM:DATA ASC,0')
                     for trace in traces:
                         try:
-                            if trace not in mapping:
-                                raise ValueError(f'窗口 Trace {trace} 没有匹配测量，不猜测其通道')
-                            record = export_trace(inst, args.window, trace, output, mapping[trace])
+                            record = export_trace(inst, args.window, trace, output)
                             report['traces'].append(record)
                             print(f"已保存 {record['file']} ({record['points']} 点)")
                         except Exception as exc:
