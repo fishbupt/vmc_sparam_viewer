@@ -19,4 +19,5 @@ vmc_sim_*/
 .vmc_staging_*/
 local_data/
 examples/
+PNA_Traces/
 *.log
