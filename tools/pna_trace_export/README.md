@@ -1,4 +1,4 @@
-# PNA 窗口 Trace 导出工具 · v1.0.5
+# PNA 窗口 Trace 导出工具 · v1.0.6
 
 独立命令行脚本，可复制此目录到其他电脑运行，无需安装 VNA Calibration Workbench 或 GUI 依赖。Python 3.10+，需安装支持 HiSLIP 的 VISA 实现（例如 Keysight IO Libraries Suite）。
 
@@ -42,26 +42,24 @@ PyCharm 可选择 `tools/pna_trace_export/.venv/Scripts/python.exe` 作为解释
 ## 命名与文件含义
 
 - `Tr1_S11.s1p`、`Tr6_a2_over_b2,1.s1p`，不包含显示格式 LogM。
-- 窗口内部 Trace ID 与屏幕 Tr 编号可能不同；脚本逐条选择目标窗口的 Trace、等待命令完成并确认活动窗口，再查询当前测量编号和测量所属通道。
+- 窗口内部 Trace ID 与屏幕 Tr 编号可能不同；脚本逐条选择目标窗口的 Trace 并查询当前测量编号，通道固定为 1。
 - Windows 不允许文件名包含 `/`，替换为 `_over_`；原参数保留在文件注释和 manifest 中。仪器可能返回等价物理接收机名称，而非屏幕上的逻辑 a/b 名称。
 - 每个文件仅有频率、实部、虚部，使用 `# Hz S RI R 50` 和 17 位有效数字，不丢失相位。
 - **S21、接收机比值等借用 S1P 的 S11 列存储，并非真实单端口网络。** R 50 仅为文件约定，未进行重归一化，不能直接当作物理 S11 使用。
-- 导出 SDATA，校准状态遵循仪器当前设置；不等同于显示变换、平滑、Data/Memory 运算后的屏幕曲线。不导出 Memory 曲线；启用 Equation 的 Trace 会报错跳过。
-- 面向默认频率横轴（Hz）的 LIN / LOG / SEGM 扫描；要求频率严格递增。功率 / CW / 非默认横轴不属于支持范围。
+- 导出 SDATA，校准状态遵循仪器当前设置；不等同于显示变换、平滑、Data/Memory 运算后的屏幕曲线。不导出 Memory 曲线，也不查询 Equation 状态；使用前自行确认需要底层测量数据。
+- 使用前自行设置频率扫描及默认 Hz 横轴；脚本不检测扫描类型或频率递增。
 - 脚本不触发新扫频、不冻结扫频，读取现有测量数据；如要求各 Trace 对应同一完整采集状态，请先在 PNA 完成扫频并 Hold。
-- 激活窗口 2 并逐条选择 Trace，等待命令完成后回读活动窗口；不匹配时停止该 Trace 导出。数据使用选中 Trace 对应的显式测量编号读取。临时切换 ASCII 数据传输，正常结束时恢复原 FORM:DATA。查询超时后立即停止，不继续使用可能失步的会话，也不发送格式恢复命令。
+- 发送窗口切换命令并逐条选择 Trace，不做活动窗口回读、通道归属、命令完成或错误队列检查；固定 Channel 1。正常结束恢复原 FORM:DATA，通信超时后停止使用会话。
 
 ## SCPI 流程
 
-`DISP:WIND2:CAT?` → 对每个 Trace 执行 `DISP:WIND2:TRAC<t>:SEL` → 等待 `*OPC?` 并确认 `SYST:ACT:WIND?` → `SYST:ACT:MEAS:NUMB?` → `SYST:MEAS<m>:CHAN?` → `CALC<c>:MEAS<m>:PAR?` → `DATA:X?` / `DATA:SDATA?`。
+`SYST:ACT:WIND 2` → `DISP:WIND2:CAT?` → 对每个 Trace 执行 `DISP:WIND2:TRAC<t>:SEL` → `SYST:ACT:MEAS:NUMB?` → `CALC1:MEAS<m>:PAR?` → `DATA:X?` / `DATA:SDATA?`。
 
-通道编号必须大于 0；无效或缺失映射明确报错，不默认猜测 Channel 1。控制台打印实际窗口 Trace / 测量 / 通道映射，查询失败包含具体命令。依据 [Keysight System SCPI 文档](https://helpfiles.keysight.com/csg/NA520xA/Programming/GP-IB_Command_Finder/System.htm)。
-
-窗口激活流程为 `SYST:ACT:WIND 2` → `DISP:WIND2:TRAC<t>:SEL` → `*OPC?` → `SYST:ACT:WIND?`。不再使用 `window_measurements()` 或 `SYST:MEAS<m>:WIND?` 的全局归属筛选。控制台打印活动窗口和选中 Trace 对应的测量 / 通道编号，排查时保留完整输出。
-
-依赖 Keysight PNA 固件对这些命令的支持；遇到不支持命令会报错，不编造或补零数据。
+这是针对 Channel 1 的简单采集工具，不调用 `activate_window()` 或 `window_measurements()`，不查询通道、扫描类型、Equation 状态、活动窗口或 SYST:ERR?。保留数据长度 / 非有限值检查与文件覆盖保护，通信失败报告具体命令。
 
 ## 验证
+
+v1.0.6：模拟检查固定 Channel 1 的最简查询顺序、复数数据和文件名保留、通信失败及资源释放。未完成真实 PNA 验证。以下记录为历史版本行为。
 
 v1.0.5：移除全局测量归属筛选；模拟验证逐条选择并获取真实测量编号，拒绝测量 0 / 通道 0，且不发送全局目录及所属窗口查询。未完成真实 PNA 验证。
 

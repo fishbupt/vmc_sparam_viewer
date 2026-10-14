@@ -12,7 +12,7 @@
 S21、接收机比值等借用 s1p 的单复数列格式；它们并非物理单端口 S11。
 R 50 仅为存储约定，不进行阻抗重归一化。仅支持频率扫描。
 导出 SDATA（保留相位），不是屏幕 LogM 的单列 dB 值。
-不导出 Memory 曲线，也不将方程结果误作底层测量导出。
+固定使用 Channel 1，导出底层 SDATA，不导出 Memory 或方程结果。
 文件保存在运行此脚本的电脑，不是通过 MMEM 保存到仪器端。
 
 SCPI 参考: Keysight VNA Help / Programming / GP-IB_Command_Finder /
@@ -50,21 +50,12 @@ def read_response(inst, command):
         raise ScpiTransportError(f'{command}: 查询失败 ({exc})；本次导出已停止') from exc
 
 
-def check_error(inst, command):
-    response = read_response(inst, 'SYST:ERR?')
-    if int(response.split(',', 1)[0]) != 0:
-        raise RuntimeError(f'{command}: {response}')
-
-
 def query(inst, command):
-    result = read_response(inst, command)
-    check_error(inst, command)
-    return result
+    return read_response(inst, command)
 
 
 def write(inst, command):
     inst.write(command)
-    check_error(inst, command)
 
 
 def numbers(inst, command):
@@ -75,29 +66,10 @@ def numbers(inst, command):
     return values
 
 
-def activate_window(inst, window, trace):
-    write(inst, f'SYST:ACT:WIND {window}')
-    # 同时选择目标窗口的一条真实 Trace，以设置前面板焦点。
-    write(inst, f'DISP:WIND{window}:TRAC{trace}:SEL')
-    if query(inst, '*OPC?') != '1':
-        raise RuntimeError('窗口选择命令未正常完成')
-    active = int(query(inst, 'SYST:ACT:WIND?'))
-    print(f'目标窗口: {window}; 回读活动窗口: {active}')
-    if active != window:
-        raise RuntimeError(f'窗口激活未生效：请求 {window}，回读 {active}；停止导出')
-    return active
-
-
 def export_trace(inst, window, trace, output):
-    # 对窗口目录的每一条 Trace 明确选择并等待完成，再读当前测量编号。
-    # 不再查询全局测量目录或 SYST:MEAS<n>:WIND? 进行归属筛选。
-    activate_window(inst, window, trace)
+    write(inst, f'DISP:WIND{window}:TRAC{trace}:SEL')
     measurement = int(query(inst, 'SYST:ACT:MEAS:NUMB?'))
-    if measurement <= 0:
-        raise ValueError(f'窗口 {window} Trace {trace} 未找到有效测量编号')
-    channel = int(query(inst, f'SYST:MEAS{measurement}:CHAN?'))
-    if channel <= 0:
-        raise ValueError(f'测量 {measurement} 返回无效通道 {channel}，不发送 CALC{channel} 命令')
+    channel = 1
     print(f'映射: Window {window} Trace {trace} → 测量 {measurement}, Channel {channel}')
     prefix = f'CALC{channel}:MEAS{measurement}'
     parameter = unquote(query(inst, f'{prefix}:PAR?'))
@@ -105,20 +77,11 @@ def export_trace(inst, window, trace, output):
     parameter = re.sub(r'\s+', '', parameter)
     if not parameter:
         raise ValueError('测量参数名称为空')
-    sweep = unquote(query(inst, f'SENS{channel}:SWE:TYPE?')).upper()
-    if sweep not in {'LIN', 'LOG', 'SEGM'}:
-        raise ValueError(f'仅支持 LIN/LOG/SEGM 频率扫描，当前为 {sweep}')
-    if int(query(inst, f'{prefix}:EQU:STAT?')):
-        raise ValueError('当前 Trace 启用了 Equation；SDATA 不保证返回方程结果，已跳过')
     # Standard 频率扫描的默认 X 轴为 Hz；不使用显示缩放后的 GHz 数值。
     frequency = numbers(inst, f'{prefix}:DATA:X?')
     data = numbers(inst, f'{prefix}:DATA:SDATA?')
     if len(data) != 2 * len(frequency):
         raise ValueError(f'频率 {len(frequency)} 点，复数数据 {len(data)} 个数，长度不匹配')
-    if any(f <= 0 for f in frequency):
-        raise ValueError('频率必须大于零')
-    if any(b <= a for a, b in zip(frequency, frequency[1:])):
-        raise ValueError('频率不是严格递增；请检查分段扫描设置')
     name = f'Tr{measurement}_{parameter}'
     path = output / (safe_name(name) + '.s1p')
     if path.exists():
@@ -158,7 +121,7 @@ def main():
     # 每次建立独立子目录，避免覆盖上一次导出。
     output = args.output.resolve() / f'Window{args.window}_{datetime.now():%Y%m%d_%H%M%S_%f}'
     output.mkdir(parents=True, exist_ok=False)
-    report = dict(resource=args.resource, window=args.window, traces=[], errors=[])
+    report = dict(resource=args.resource, window=args.window, channel=1, traces=[], errors=[])
     try:
         # ResourceManager 不提供 __enter__/__exit__，用 closing 显式调用 close。
         # 内层先关闭仪器连接，外层再关闭 VISA 资源管理器。
@@ -170,20 +133,12 @@ def main():
                 inst.chunk_size = 1024 * 1024
                 report['instrument'] = inst.query('*IDN?').strip()
                 print('已连接:', report['instrument'])
-                # 报告并清空连接前已有的错误，避免误判为本脚本命令错误。
-                for _ in range(100):
-                    old_error = inst.query('SYST:ERR?').strip()
-                    if int(old_error.split(',', 1)[0]) == 0:
-                        break
-                    print('仪器原有错误:', old_error)
-                else:
-                    raise RuntimeError('仪器错误队列持续非空')
+                write(inst, f'SYST:ACT:WIND {args.window}')
                 catalogue = unquote(query(inst, f'DISP:WIND{args.window}:CAT?'))
                 traces = [int(x.strip()) for x in catalogue.split(',') if x.strip()]
                 if not traces or any(t <= 0 for t in traces):
                     raise RuntimeError('窗口中没有可导出的 Trace')
                 print(f'窗口 {args.window}: {traces}')
-                report['active_window'] = activate_window(inst, args.window, traces[0])
                 old_format = query(inst, 'FORM:DATA?')
                 transport_failed = False
                 try:

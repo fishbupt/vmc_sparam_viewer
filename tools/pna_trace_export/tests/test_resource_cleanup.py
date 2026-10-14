@@ -21,10 +21,8 @@ class ResourceCleanupTests(unittest.TestCase):
             def query(self, command):
                 if failure == 'query' and command == '*IDN?':
                     raise RuntimeError('query failed')
-                return {'*IDN?': 'Fake PNA', 'SYST:ERR?': '0,"No error"',
-                        'DISP:WIND2:CAT?': '12', 'FORM:DATA?': 'REAL,64',
-                        '*OPC?': '1',
-                        'SYST:ACT:WIND?': '2'}[command]
+                return {'*IDN?': 'Fake PNA',
+                        'DISP:WIND2:CAT?': '12', 'FORM:DATA?': 'REAL,64'}[command]
 
             def write(self, command):
                 pass
