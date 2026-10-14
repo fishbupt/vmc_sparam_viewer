@@ -75,6 +75,19 @@ def numbers(inst, command):
     return values
 
 
+def activate_window(inst, window, trace):
+    write(inst, f'SYST:ACT:WIND {window}')
+    # 同时选择目标窗口的一条真实 Trace，以设置前面板焦点。
+    write(inst, f'DISP:WIND{window}:TRAC{trace}:SEL')
+    if query(inst, '*OPC?') != '1':
+        raise RuntimeError('窗口选择命令未正常完成')
+    active = int(query(inst, 'SYST:ACT:WIND?'))
+    print(f'目标窗口: {window}; 回读活动窗口: {active}')
+    if active != window:
+        raise RuntimeError(f'窗口激活未生效：请求 {window}，回读 {active}；停止导出')
+    return active
+
+
 def window_measurements(inst, window):
     """根据测量自身的所属窗口和 Trace ID 建立映射，不依赖前面板选择。"""
     catalogue = unquote(query(inst, 'SYST:MEAS:CAT?'))
@@ -85,7 +98,9 @@ def window_measurements(inst, window):
         measurement = int(value)
         if measurement <= 0:
             raise ValueError(f'测量目录返回非法编号: {measurement}')
-        if int(query(inst, f'SYST:MEAS{measurement}:WIND?')) != window:
+        owner = int(query(inst, f'SYST:MEAS{measurement}:WIND?'))
+        print(f'测量 {measurement} 所属窗口: {owner} (目标 {window})')
+        if owner != window:
             continue
         trace = int(query(inst, f'SYST:MEAS{measurement}:TRAC?'))
         if trace <= 0 or trace in mapping:
@@ -182,13 +197,15 @@ def main():
                     print('仪器原有错误:', old_error)
                 else:
                     raise RuntimeError('仪器错误队列持续非空')
-                write(inst, f'SYST:ACT:WIND {args.window}')
                 catalogue = unquote(query(inst, f'DISP:WIND{args.window}:CAT?'))
                 traces = [int(x.strip()) for x in catalogue.split(',') if x.strip()]
                 if not traces or any(t <= 0 for t in traces):
                     raise RuntimeError('窗口中没有可导出的 Trace')
                 print(f'窗口 {args.window}: {traces}')
+                report['active_window'] = activate_window(inst, args.window, traces[0])
                 mapping = window_measurements(inst, args.window)
+                if not mapping:
+                    raise ValueError(f'测量目录没有返回窗口 {args.window} 的测量，检查上方所属窗口回读日志')
                 old_format = query(inst, 'FORM:DATA?')
                 transport_failed = False
                 try:

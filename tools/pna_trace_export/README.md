@@ -1,4 +1,4 @@
-# PNA 窗口 Trace 导出工具 · v1.0.3
+# PNA 窗口 Trace 导出工具 · v1.0.4
 
 独立命令行脚本，可复制此目录到其他电脑运行，无需安装 VNA Calibration Workbench 或 GUI 依赖。Python 3.10+，需安装支持 HiSLIP 的 VISA 实现（例如 Keysight IO Libraries Suite）。
 
@@ -49,7 +49,7 @@ PyCharm 可选择 `tools/pna_trace_export/.venv/Scripts/python.exe` 作为解释
 - 导出 SDATA，校准状态遵循仪器当前设置；不等同于显示变换、平滑、Data/Memory 运算后的屏幕曲线。不导出 Memory 曲线；启用 Equation 的 Trace 会报错跳过。
 - 面向默认频率横轴（Hz）的 LIN / LOG / SEGM 扫描；要求频率严格递增。功率 / CW / 非默认横轴不属于支持范围。
 - 脚本不触发新扫频、不冻结扫频，读取现有测量数据；如要求各 Trace 对应同一完整采集状态，请先在 PNA 完成扫频并 Hold。
-- 激活窗口 2，使用显式测量编号读数据；临时切换 ASCII 数据传输，正常结束时恢复原 FORM:DATA。查询超时后立即停止，不继续使用可能失步的会话，也不发送格式恢复命令。
+- 激活窗口 2 并选择其第一条 Trace，等待命令完成后回读活动窗口；不匹配时停止。数据仍使用显式测量编号读取。临时切换 ASCII 数据传输，正常结束时恢复原 FORM:DATA。查询超时后立即停止，不继续使用可能失步的会话，也不发送格式恢复命令。
 
 ## SCPI 流程
 
@@ -57,9 +57,13 @@ PyCharm 可选择 `tools/pna_trace_export/.venv/Scripts/python.exe` 作为解释
 
 通道编号必须大于 0；无效或缺失映射明确报错，不默认猜测 Channel 1。控制台打印实际窗口 Trace / 测量 / 通道映射，查询失败包含具体命令。依据 [Keysight System SCPI 文档](https://helpfiles.keysight.com/csg/NA520xA/Programming/GP-IB_Command_Finder/System.htm)。
 
+窗口激活流程为 `SYST:ACT:WIND 2` → `DISP:WIND2:TRAC<t>:SEL` → `*OPC?` → `SYST:ACT:WIND?`。`SYST:MEAS<m>:WIND?` 返回该测量所属窗口，不能用来选择活动窗口。控制台分别打印“活动窗口回读”和“测量所属窗口”，排查时保留完整输出。
+
 依赖 Keysight PNA 固件对这些命令的支持；遇到不支持命令会报错，不编造或补零数据。
 
 ## 验证
+
+v1.0.4：新增窗口 / Trace 激活、完成等待和回读检查；模拟验证成功及回读不匹配时停止。未完成真实仪器验证。
 
 v1.0.3：回归覆盖多通道与其他窗口的 Trace 映射、拒绝通道 0、单曲线实虚部及文件名、查询失败报告具体命令。尚待实际 PNA 验证。
 

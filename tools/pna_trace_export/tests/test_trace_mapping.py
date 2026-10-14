@@ -23,8 +23,24 @@ class FakeInstrument:
             raise value
         return value
 
+    def write(self, command):
+        self.commands.append(command)
+
 
 class TraceMappingTests(unittest.TestCase):
+    def test_activates_window_and_trace_then_verifies_readback(self):
+        inst = FakeInstrument({'*OPC?': '1', 'SYST:ACT:WIND?': '2'})
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(tool.activate_window(inst, 2, 12), 2)
+        operations = [c for c in inst.commands if c != 'SYST:ERR?']
+        self.assertEqual(operations, ['SYST:ACT:WIND 2', 'DISP:WIND2:TRAC12:SEL',
+                                      '*OPC?', 'SYST:ACT:WIND?'])
+
+    def test_rejects_window_activation_mismatch(self):
+        inst = FakeInstrument({'*OPC?': '1', 'SYST:ACT:WIND?': '1'})
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaisesRegex(RuntimeError, '请求 2，回读 1'):
+            tool.activate_window(inst, 2, 12)
+
     def test_mapping_ignores_front_panel_state_and_other_windows(self):
         inst = FakeInstrument({'SYST:MEAS:CAT?': '"2,6,9"',
                                'SYST:MEAS2:WIND?': '2', 'SYST:MEAS2:TRAC?': '12',
