@@ -8,7 +8,7 @@
 需安装 Keysight IO Libraries Suite 或其他支持 HiSLIP 的 VISA 实现。
 
 默认连接 TCPIP::127.0.0.1::hislip0，激活窗口 2。
-每条曲线存为独立 .s1p (RI)，并输出 manifest.json 记录真实参数。
+每条曲线存为独立 Tr<测量编号>.s1p (RI)，不查询参数名称。
 S21、接收机比值等借用 s1p 的单复数列格式；它们并非物理单端口 S11。
 R 50 仅为存储约定，不进行阻抗重归一化。仅支持频率扫描。
 导出 SDATA（保留相位），不是屏幕 LogM 的单列 dB 值。
@@ -72,27 +72,22 @@ def export_trace(inst, window, trace, output):
     channel = 1
     print(f'映射: Window {window} Trace {trace} → 测量 {measurement}, Channel {channel}')
     prefix = f'CALC{channel}:MEAS{measurement}'
-    parameter = unquote(query(inst, f'{prefix}:PAR?'))
-    # 参数中可能有逗号（源端口），不能把整个返回字符串再按逗号拆开。
-    parameter = re.sub(r'\s+', '', parameter)
-    if not parameter:
-        raise ValueError('测量参数名称为空')
     # Standard 频率扫描的默认 X 轴为 Hz；不使用显示缩放后的 GHz 数值。
     frequency = numbers(inst, f'{prefix}:DATA:X?')
     data = numbers(inst, f'{prefix}:DATA:SDATA?')
     if len(data) != 2 * len(frequency):
         raise ValueError(f'频率 {len(frequency)} 点，复数数据 {len(data)} 个数，长度不匹配')
-    name = f'Tr{measurement}_{parameter}'
+    name = f'Tr{measurement}'
     path = output / (safe_name(name) + '.s1p')
     if path.exists():
         path = output / (safe_name(name) + f'_W{window}T{trace}.s1p')
     header = [
         '! Keysight PNA single complex trace export',
         f'! Trace: {name}',
-        f'! Parameter: {parameter}',
+        '! Parameter: not queried; identify the source curve by its measurement number.',
         f'! Window: {window}; window trace ID: {trace}; channel: {channel}; measurement: {measurement}',
         '! Data: SDATA; correction follows current instrument state.',
-        '! One complex curve stored in the S11 column; original parameter is given above.',
+        '! One complex curve stored in the S11 column; this column does not identify the original parameter.',
         '! For transmission/receiver ratios, this is a curve container, not a physical one-port network.',
         '! R 50 is a file convention only; no impedance renormalization was performed.',
         '# Hz S RI R 50',
@@ -103,7 +98,7 @@ def export_trace(inst, window, trace, output):
         for i, f in enumerate(frequency):
             handle.write(f'{f:.17g} {data[2*i]:.17g} {data[2*i+1]:.17g}\n')
     return dict(window_trace_id=trace, channel=channel, measurement=measurement,
-                parameter=parameter, trace_name=name, file=path.name,
+                parameter=None, trace_name=name, file=path.name,
                 points=len(frequency), frequency_unit='Hz')
 
 

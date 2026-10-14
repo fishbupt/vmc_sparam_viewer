@@ -1,6 +1,6 @@
 [project]
 name = "pna-trace-export"
-version = "1.0.6"
+version = "1.0.7"
 description = "Standalone Keysight PNA window trace export tool"
 requires-python = ">=3.10"
 dependencies = ["pyvisa>=1.13,<2"]

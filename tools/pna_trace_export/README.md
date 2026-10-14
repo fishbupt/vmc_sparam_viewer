@@ -1,4 +1,4 @@
-# PNA 窗口 Trace 导出工具 · v1.0.6
+# PNA 窗口 Trace 导出工具 · v1.0.7
 
 独立命令行脚本，可复制此目录到其他电脑运行，无需安装 VNA Calibration Workbench 或 GUI 依赖。Python 3.10+，需安装支持 HiSLIP 的 VISA 实现（例如 Keysight IO Libraries Suite）。
 
@@ -41,9 +41,9 @@ PyCharm 可选择 `tools/pna_trace_export/.venv/Scripts/python.exe` 作为解释
 
 ## 命名与文件含义
 
-- `Tr1_S11.s1p`、`Tr6_a2_over_b2,1.s1p`，不包含显示格式 LogM。
+- `Tr1.s1p`、`Tr6.s1p`，仅使用测量编号命名，不查询参数名称或显示格式。
 - 窗口内部 Trace ID 与屏幕 Tr 编号可能不同；脚本逐条选择目标窗口的 Trace 并查询当前测量编号，通道固定为 1。
-- Windows 不允许文件名包含 `/`，替换为 `_over_`；原参数保留在文件注释和 manifest 中。仪器可能返回等价物理接收机名称，而非屏幕上的逻辑 a/b 名称。
+- 文件注释和 manifest 记录测量编号、窗口 Trace 编号及固定通道 1；参数名未查询，manifest 的 parameter 为 null。
 - 每个文件仅有频率、实部、虚部，使用 `# Hz S RI R 50` 和 17 位有效数字，不丢失相位。
 - **S21、接收机比值等借用 S1P 的 S11 列存储，并非真实单端口网络。** R 50 仅为文件约定，未进行重归一化，不能直接当作物理 S11 使用。
 - 导出 SDATA，校准状态遵循仪器当前设置；不等同于显示变换、平滑、Data/Memory 运算后的屏幕曲线。不导出 Memory 曲线，也不查询 Equation 状态；使用前自行确认需要底层测量数据。
@@ -53,11 +53,13 @@ PyCharm 可选择 `tools/pna_trace_export/.venv/Scripts/python.exe` 作为解释
 
 ## SCPI 流程
 
-`SYST:ACT:WIND 2` → `DISP:WIND2:CAT?` → 对每个 Trace 执行 `DISP:WIND2:TRAC<t>:SEL` → `SYST:ACT:MEAS:NUMB?` → `CALC1:MEAS<m>:PAR?` → `DATA:X?` / `DATA:SDATA?`。
+`SYST:ACT:WIND 2` → `DISP:WIND2:CAT?` → 对每个 Trace 执行 `DISP:WIND2:TRAC<t>:SEL` → `SYST:ACT:MEAS:NUMB?` → `CALC1:MEAS<m>:DATA:X?` / `DATA:SDATA?`。
 
-这是针对 Channel 1 的简单采集工具，不调用 `activate_window()` 或 `window_measurements()`，不查询通道、扫描类型、Equation 状态、活动窗口或 SYST:ERR?。保留数据长度 / 非有限值检查与文件覆盖保护，通信失败报告具体命令。
+这是针对 Channel 1 的简单采集工具，不调用 `activate_window()` 或 `window_measurements()`，不查询参数名、通道、扫描类型、Equation 状态、活动窗口或 SYST:ERR?。保留数据长度 / 非有限值检查与文件覆盖保护，通信失败报告具体命令。
 
 ## 验证
+
+v1.0.7：移除 PAR? 查询，模拟验证按测量编号命名及最简数据查询顺序，未完成真实 PNA 验证。
 
 v1.0.6：模拟检查固定 Channel 1 的最简查询顺序、复数数据和文件名保留、通信失败及资源释放。未完成真实 PNA 验证。以下记录为历史版本行为。
 
