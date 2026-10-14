@@ -21,6 +21,7 @@ Calculate/MeasureDATA.htm。
 """
 
 import argparse
+from contextlib import closing
 from datetime import datetime
 import json
 import math
@@ -128,8 +129,10 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     report = dict(resource=args.resource, window=args.window, traces=[], errors=[])
     try:
-        with pyvisa.ResourceManager() as manager:
-            with manager.open_resource(args.resource) as inst:
+        # ResourceManager 不提供 __enter__/__exit__，用 closing 显式调用 close。
+        # 内层先关闭仪器连接，外层再关闭 VISA 资源管理器。
+        with closing(pyvisa.ResourceManager()) as manager:
+            with closing(manager.open_resource(args.resource)) as inst:
                 inst.timeout = args.timeout
                 inst.read_termination = '\n'
                 inst.write_termination = '\n'

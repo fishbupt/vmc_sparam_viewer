@@ -1,4 +1,4 @@
-# PNA 窗口 Trace 导出工具 · v1.0.1
+# PNA 窗口 Trace 导出工具 · v1.0.2
 
 独立命令行脚本，可复制此目录到其他电脑运行，无需安装 VNA Calibration Workbench 或 GUI 依赖。Python 3.10+，需安装支持 HiSLIP 的 VISA 实现（例如 Keysight IO Libraries Suite）。
 
@@ -58,6 +58,8 @@ PyCharm 可选择 `tools/pna_trace_export/.venv/Scripts/python.exe` 作为解释
 依赖 Keysight PNA 固件对这些命令的支持；遇到不支持命令会报错，不编造或补零数据。
 
 ## 验证
+
+v1.0.2：修复 PyVISA ResourceManager 不支持上下文管理器的问题；使用 `contextlib.closing`，先关闭仪器连接，再关闭资源管理器。回归覆盖正常导出、查询失败和连接失败的资源释放。可运行 `uv run --locked python -m unittest discover -s tests -v`。
 
 2026-10-14：模拟仪器响应检查通过，覆盖窗口 Trace 12 映射测量 6、带源端口逗号的接收机比值文件名、Hz / RI 数值保留及重复文件保护；命令行 `--help` 可运行。未连接实际 PNA，尚未完成 Windows / PNA 现场验证。
 
