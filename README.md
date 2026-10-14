@@ -4,7 +4,7 @@
 
 ## 名称与使用说明
 
-- [独立工具：PNA 窗口 Trace 导出](tools/pna_trace_export/README.md)：通过 PyVISA 导出窗口内每条复数曲线，可单独复制运行。
+- [独立工具：PNA 窗口 Trace 导出](tools/pna_trace_export/README.md)：通过 PyVISA 导出窗口内每条复数曲线，使用独立 uv 环境和锁文件，可单独复制运行。
 
 - 软件名称：**VNA Calibration Workbench**。
 - 中文名称：**VNA 校准与验证工作台**。

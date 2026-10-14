@@ -1,3 +1,8 @@
+# 独立工具 · PNA Trace 导出 v1.0.1（2026-10-14）
+
+- 工具新增独立 `pyproject.toml` / `uv.lock`，使用 uv 管理依赖和运行；移除重复的 requirements.txt，更新命令行提示、README 和验证说明。
+- 使用工具自身的 `.venv`，不引入工作台 GUI 依赖；工作台版本及采集逻辑不变。
+
 # 独立工具 · PNA Trace 导出 v1.0.0（2026-10-14）
 
 - 新增 `tools/pna_trace_export/`，独立连接本地 HiSLIP 仪器并激活窗口 2；遍历窗口 Trace，映射真实测量编号和参数名，导出单曲线 S1P 与 manifest.json。

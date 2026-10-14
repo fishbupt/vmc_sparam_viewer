@@ -2,9 +2,9 @@
 # -*- coding: utf-8 -*-
 """导出本地 Keysight PNA 窗口中的每条复数 Trace。
 
-安装: python -m pip install pyvisa
-运行: python export_window_traces.py
-指定目录: python export_window_traces.py --output D:/PNA_Traces
+准备环境: uv sync --locked
+运行: uv run --locked python export_window_traces.py
+指定目录: uv run --locked python export_window_traces.py --output D:/PNA_Traces
 需安装 Keysight IO Libraries Suite 或其他支持 HiSLIP 的 VISA 实现。
 
 默认连接 TCPIP::127.0.0.1::hislip0，激活窗口 2。
@@ -122,7 +122,7 @@ def main():
     try:
         import pyvisa
     except ImportError:
-        parser.exit(1, '请先运行: python -m pip install pyvisa\n')
+        parser.exit(1, '请在工具目录运行: uv run --locked python export_window_traces.py\n')
     # 每次建立独立子目录，避免覆盖上一次导出。
     output = args.output.resolve() / f'Window{args.window}_{datetime.now():%Y%m%d_%H%M%S_%f}'
     output.mkdir(parents=True, exist_ok=False)

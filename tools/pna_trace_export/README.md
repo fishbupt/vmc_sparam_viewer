@@ -1,17 +1,34 @@
-# PNA 窗口 Trace 导出工具 · v1.0.0
+# PNA 窗口 Trace 导出工具 · v1.0.1
 
 独立命令行脚本，可复制此目录到其他电脑运行，无需安装 VNA Calibration Workbench 或 GUI 依赖。Python 3.10+，需安装支持 HiSLIP 的 VISA 实现（例如 Keysight IO Libraries Suite）。
 
 ## 运行
 
-在仓库根目录执行：
+安装 [uv](https://docs.astral.sh/uv/getting-started/installation/) 后，进入工具目录运行：
 
 ```powershell
-python -m pip install -r tools/pna_trace_export/requirements.txt
-python tools/pna_trace_export/export_window_traces.py --output D:/PNA_Traces
+cd tools/pna_trace_export
+uv run --locked python export_window_traces.py --output D:/PNA_Traces
 ```
 
-也可进入此目录执行 `python export_window_traces.py`，或直接在 PyCharm 中运行该脚本。
+`uv run` 自动在工具目录创建 `.venv` 并安装锁定的依赖，无需手动激活环境。本工具有独立的 `pyproject.toml` / `uv.lock`，不安装工作台的 PyQt6 等依赖。复制到其他电脑时请保留整个工具目录。
+
+也可在仓库根目录运行：
+
+```powershell
+uv run --directory tools/pna_trace_export --locked python export_window_traces.py --output D:/PNA_Traces
+```
+
+`--directory` 将工作目录切换到工具目录；省略 `--output` 时结果保存在该目录下的 `PNA_Traces`。
+
+只准备环境、不连接仪器：
+
+```powershell
+uv sync --locked
+uv run --locked python export_window_traces.py --help
+```
+
+PyCharm 可选择 `tools/pna_trace_export/.venv/Scripts/python.exe` 作为解释器并直接运行脚本。VISA 驱动仍需单独安装，uv 仅管理 Python 依赖。
 
 | 选项 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -43,3 +60,5 @@ python tools/pna_trace_export/export_window_traces.py --output D:/PNA_Traces
 ## 验证
 
 2026-10-14：模拟仪器响应检查通过，覆盖窗口 Trace 12 映射测量 6、带源端口逗号的接收机比值文件名、Hz / RI 数值保留及重复文件保护；命令行 `--help` 可运行。未连接实际 PNA，尚未完成 Windows / PNA 现场验证。
+
+v1.0.1：检查独立 uv 锁定环境同步、PyVISA 导入，以及工具目录与仓库根目录两种 `--help` 入口；不改变采集和导出逻辑。
