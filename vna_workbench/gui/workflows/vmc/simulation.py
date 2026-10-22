@@ -46,9 +46,12 @@ class VMCSimulationDialog(QDialog):
         self.conversion=self.combo('frequency_conversion',CONVERSION_MODES,'up');form.addRow('变频方向',self.conversion)
         self.mapping=QLabel();self.mapping.setWordWrap(True);form.addRow('自动 IF',self.mapping)
         self.raw_axis=self.combo('raw_axis',AXIS_MODES,'dual');form.addRow('CalTHRU / MUT 横轴',self.raw_axis)
+        self.high_side_btn=QPushButton('高边 LO 验证预设：RF 10～15 / LO 20 GHz')
+        self.high_side_btn.clicked.connect(self.high_side_preset);self.controls.append(self.high_side_btn);form.addRow(self.high_side_btn)
         self.sampling=self.combo('standard_sampling',SAMPLING_METHODS,'cubic_ri');form.addRow('定义插值（禁止外推）',self.sampling)
         group=QGroupBox('标准件定义：OPEN / SHORT / LOAD / THRU');form=QFormLayout(group);left.addWidget(group)
         self.import_sol=self.check('import_sol','导入三个实际 SOL S1P；否则理想 +1 / −1 / 0');form.addRow(self.import_sol)
+        self.synthetic_sol=self.check('synthetic_sol','使用内置非理想 SOL（仅算法验证，优先于导入）');form.addRow(self.synthetic_sol)
         for k in ('open','short','load'):self.file_row(form,k,k.upper()+' S1P','S1P (*.s1p *.S1P)')
         self.import_thru=self.check('import_thru','导入 THRU S2P；否则零延迟 / 零损耗 Flush');form.addRow(self.import_thru)
         self.file_row(form,'thru','THRU S2P','S2P (*.s2p *.S2P)')
@@ -75,7 +78,7 @@ class VMCSimulationDialog(QDialog):
                     self.models[name][key]=spin;grid.addWidget(spin,row,col)
         self.separate_port2=self.check('separate_port2','Port2 使用独立误差盒；否则与 Port1 相同');left.addWidget(self.separate_port2)
         note=QLabel('混频器相位以 RF 起点为参考；端口误差盒以实际物理频率计算，参考频率同为 RF 起点。\n'
-            '单程 t 对应 ERF=t²；校准混频器互易，MUT 固定单向模型。')
+            '高边 LO：S22 时延按 IF 计算；真值 VC21 为输入参考等效传输，原始 SM21 为物理输出响应。')
         note.setWordWrap(True);left.addWidget(note)
         group=QGroupBox('原始测量噪声');form=QFormLayout(group);left.addWidget(group)
         self.noise=self.check('noise_enabled','启用复高斯加性噪声；定义和真值不加噪声');form.addRow(self.noise)
@@ -99,8 +102,16 @@ class VMCSimulationDialog(QDialog):
         self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.hide();actions.addWidget(self.progress)
         close=QPushButton('关闭');close.clicked.connect(self.reject);actions.addWidget(close)
         if embedded:close.hide();self.setMinimumSize(0,0)
-        for c in (self.import_sol,self.import_thru,self.import_cal,self.noise,self.separate_port2):c.toggled.connect(self.update_controls)
+        for c in (self.import_sol,self.synthetic_sol,self.import_thru,self.import_cal,self.noise,self.separate_port2):c.toggled.connect(self.update_controls)
         self.update_mapping();self.update_controls()
+
+    def high_side_preset(self):
+        for name,value in [('rf_start_hz',10),('rf_stop_hz',15),('lo_hz',20),('points',201)]:
+            self.parameters[name][0].setValue(value)
+        self.conversion.setCurrentIndex(self.conversion.findData('high_side'))
+        self.raw_axis.setCurrentIndex(self.raw_axis.findData('rf'))
+        self.import_sol.setChecked(False);self.synthetic_sol.setChecked(True)
+        self.import_thru.setChecked(False);self.import_cal.setChecked(False);self.noise.setChecked(False)
 
     def number(self,key,default,lo,hi):
         spin=QDoubleSpinBox();spin.setRange(lo,hi);spin.setDecimals(6 if key.startswith('model/') else 9);spin.setValue(float(self.settings.value(key,default)))
@@ -151,7 +162,7 @@ class VMCSimulationDialog(QDialog):
 
     def update_controls(self,*args):
         if self.worker:return
-        for k,active in [('open',self.import_sol.isChecked()),('short',self.import_sol.isChecked()),('load',self.import_sol.isChecked()),
+        for k,active in [('open',(self.import_sol.isChecked() and not self.synthetic_sol.isChecked())),('short',(self.import_sol.isChecked() and not self.synthetic_sol.isChecked())),('load',(self.import_sol.isChecked() and not self.synthetic_sol.isChecked())),
                          ('thru',self.import_thru.isChecked()),('calibration_mixer',self.import_cal.isChecked())]:
             self.file_fields[k].setEnabled(active);self.file_buttons[k].setEnabled(active)
         self.definition_axis.setEnabled(self.import_cal.isChecked())
@@ -163,7 +174,7 @@ class VMCSimulationDialog(QDialog):
         v={k:spin.value()*factor for k,(spin,factor) in self.parameters.items()}
         for key in ('points','noise_seed','noise_averages'):v[key]=int(v[key])
         model=lambda name,cls:cls(**{k:s.value() for k,s in self.models[name].items()})
-        return VMCSimulationOptions(**v,frequency_conversion=self.conversion.currentData(),raw_axis=self.raw_axis.currentData(),
+        return VMCSimulationOptions(**v,synthetic_sol=self.synthetic_sol.isChecked(),frequency_conversion=self.conversion.currentData(),raw_axis=self.raw_axis.currentData(),
             standard_sampling=self.sampling.currentData(),noise_enabled=self.noise.isChecked(),
             calibration_mixer=model('calibration_mixer',MixerModel),mut=model('mut',MixerModel),
             port1=model('port1',PortModel),port2=model('port2',PortModel) if self.separate_port2.isChecked() else None)
@@ -174,12 +185,12 @@ class VMCSimulationDialog(QDialog):
             for k,s in model.items():self.settings.setValue('model/'+name+'/'+k,s.value())
         for k,e in self.file_fields.items():self.settings.setValue('path/'+k,e.text())
         for k,c in [('frequency_conversion',self.conversion),('raw_axis',self.raw_axis),('standard_sampling',self.sampling),('mixer_definition_axis',self.definition_axis)]:self.settings.setValue(k,c.currentData())
-        for k,c in [('import_sol',self.import_sol),('import_thru',self.import_thru),('import_cal',self.import_cal),('separate_port2',self.separate_port2),('noise_enabled',self.noise)]:self.settings.setValue(k,c.isChecked())
+        for k,c in [('synthetic_sol',self.synthetic_sol),('import_sol',self.import_sol),('import_thru',self.import_thru),('import_cal',self.import_cal),('separate_port2',self.separate_port2),('noise_enabled',self.noise)]:self.settings.setValue(k,c.isChecked())
         self.settings.setValue('output_parent',self.directory.text())
 
     def compute(self):
         if self.worker:return
-        standard_paths=[self.file_fields[k].text().strip() for k in ('open','short','load')] if self.import_sol.isChecked() else None
+        standard_paths=[self.file_fields[k].text().strip() for k in ('open','short','load')] if (self.import_sol.isChecked() and not self.synthetic_sol.isChecked()) else None
         thru=self.file_fields['thru'].text().strip() if self.import_thru.isChecked() else None
         cal=self.file_fields['calibration_mixer'].text().strip() if self.import_cal.isChecked() else None
         if not self.directory.text().strip() or (standard_paths is not None and not all(standard_paths)) or (self.import_thru.isChecked() and not thru) or (self.import_cal.isChecked() and not cal):
@@ -199,7 +210,7 @@ class VMCSimulationDialog(QDialog):
         self.figure.clear();axes=self.figure.subplots(2,1);f=s.frequency/1e9
         target=s.if_frequency if o.raw_axis=='if' else s.frequency
         idx=np.searchsorted(s.mixed_frequency,target);raw=s.raw['mut_raw.s2p'][idx,1,0];truth=s.mut.s['S21']
-        for z,label,color in [(truth,'MUT truth VC21','#2563eb'),(raw,'MUT raw SM21','#d97706')]:
+        for z,label,color in [(truth,'MUT truth VC21','#2563eb'),(raw,'MUT raw SM21 (physical)' if o.frequency_conversion=='high_side' else 'MUT raw SM21','#d97706')]:
             axes[0].plot(f,20*np.log10(abs(z)),label=label,color=color)
             axes[1].plot(f,np.rad2deg(np.unwrap(np.angle(z))),label=label,color=color)
         axes[0].set_ylabel('Magnitude (dB)');axes[1].set_ylabel('Unwrapped phase (deg)')

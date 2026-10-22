@@ -67,3 +67,24 @@ terms['VMC_ETF'] = m['S21']*den/c['S21']
 ```
 
 展开后的交叉项为 `(C11*C22−C12*C21)*SF*LF`。全部误差项数量为 12+8+1=21。
+
+
+## 4 高边 LO：输入参考的 VMC_ETF
+
+**函数：** `calibrate()` 的 `inverted` 分支。普通物理端口 SOL / THRU 的求解保持不变。
+
+C11/C22 是物理反射；C12/C21 是输入参考等效传输；SM21 是物理原始接收响应。
+
+\[
+F=(1-C_{11}SF)(1-C_{22}^*LF^*)-C_{12}C_{21}SF\,LF^*,
+\qquad ETF=\frac{(S_{M21}^{cal})^*F}{C_{21}}.
+\]
+
+```python
+if inverted:
+    c['S22'] = c['S22'].conj()
+    lf = lf.conj()
+    sm21 = sm21.conj()
+```
+
+此后复用 `den`、`terms['VMC_ETF']` 的普通复数运算。误差盒单程跟踪为 t1、t2 时，`ETF=t1*conj(t2)`。

@@ -12,7 +12,8 @@ import uuid
 import numpy as np
 from vna_workbench.core.standard_sampling import sample_standard, SAMPLING_METHODS, INTERPOLATION_COORDINATES
 from vna_workbench.data.models import Dataset
-from vna_workbench.core.frequency_conversion import output_frequencies, frequency_relation
+from vna_workbench.core.frequency_conversion import output_frequencies, frequency_relation, is_inverting, phase_convention
+from vna_workbench.simulation.conjugate_waves import high_side_waves
 
 """Forward simulation using a physical kit; no inverse extraction formulas."""
 
@@ -102,11 +103,18 @@ def _validate(o):
 
 def simulate(standard_paths, options=SimulationOptions()):
     _validate(options)
-    if len(standard_paths) != 3:
+    if standard_paths is not None and len(standard_paths) != 3:
         raise ValueError('请选择共用 OPEN、SHORT、LOAD 三个 S1P。')
     # Read each file once: copied bytes, hashes and evaluated values share one snapshot.
     from vna_workbench.data.standard_definitions import parse_s1p
-    blobs = [Path(p).read_bytes() for p in standard_paths]
+    if standard_paths is None:
+        from vna_workbench.simulation.verification_kit import verification_blobs
+        rf = np.linspace(options.rf_start_hz, options.rf_stop_hz, int(options.points))
+        iff = output_frequencies(rf, options.lo_hz, options.frequency_conversion)
+        blobs = verification_blobs(np.r_[rf, iff])
+        standard_paths = ['builtin:verification_open', 'builtin:verification_short', 'builtin:verification_load']
+    else:
+        blobs = [Path(p).read_bytes() for p in standard_paths]
     standards = []
     for p, blob in zip(standard_paths, blobs):
         for enc in ('utf-8-sig', 'gb18030', 'cp1252'):
@@ -123,12 +131,15 @@ def simulate(standard_paths, options=SimulationOptions()):
     f = np.linspace(options.rf_start_hz, options.rf_stop_hz, int(options.points))
     ifreq = output_frequencies(f, options.lo_hz, options.frequency_conversion)
     relation = frequency_relation(options.frequency_conversion)
+    inverted = is_inverting(options.frequency_conversion)
     df = f-f[0]
     def response(db, phase, delay):
         return 10**(db/20)*np.exp(1j*(np.deg2rad(phase)-2*np.pi*df*delay*1e-12))
     o = options
     c11=response(o.s11_db,o.s11_phase_deg,o.s11_delay_ps)
     c22=response(o.s22_db,o.s22_phase_deg,o.s22_delay_ps)
+    if inverted:
+        c22=10**(o.s22_db/20)*np.exp(1j*(np.deg2rad(o.s22_phase_deg)-2*np.pi*(ifreq-ifreq[0])*o.s22_delay_ps*1e-12))
     t=response(o.transmission_db,o.transmission_phase_deg,o.transmission_delay_ps)
     d=response(o.edf_db,o.edf_phase_deg,o.edf_delay_ps)
     s=response(o.esf_db,o.esf_phase_deg,o.esf_delay_ps)
@@ -145,8 +156,16 @@ def simulate(standard_paths, options=SimulationOptions()):
             raise ValueError('正向模型分母接近零，请调整标准件或模型参数。')
         return a[:,None]+b[:,None]*g/denom
     first=reflect(d,r,s,gamma[:,:3])
-    mixer_reflection=reflect(c11,t*t,c22,gamma[:,3:])
-    second=reflect(d,r,s,mixer_reflection)
+    if not inverted:
+        mixer_reflection=reflect(c11,t*t,c22,gamma[:,3:])
+        second=reflect(d,r,s,mixer_reflection)
+    else:
+        matrix=np.stack((np.stack((c11,t),axis=-1),np.stack((t,c22),axis=-1)),axis=-2)
+        drive=np.zeros((len(f),2,1),complex);drive[:,0,0]=np.sqrt(r)
+        second=np.empty((len(f),3),complex)
+        for j in range(3):
+            b=high_side_waves(matrix,np.column_stack((s,np.zeros_like(s))),drive,load=gamma[:,3+j])
+            second[:,j]=d+np.sqrt(r)*b[:,0,0]
     clean=np.column_stack((first,second))
     sigma=10**(o.noise_floor_db/20)/np.sqrt(o.noise_averages) if o.noise_enabled else 0.
     if sigma:
@@ -161,12 +180,13 @@ def simulate(standard_paths, options=SimulationOptions()):
         {'S11':c11,'S21':t,'S12':t.copy(),'S22':c22},
         {'StimulusFreq':f,'InputFreq':f,'OutputFreq':ifreq,'LO1Freq':np.full(len(f),o.lo_hz)},
         np.zeros(len(f),int),{'参考阻抗':f'{z0:g} Ω','数据格式':'RI','频率映射':relation,
-        '说明':'无噪声混频器真值；不是可自行变频的 DummyDUT 模型'},[])
+        '相位约定':phase_convention(o.frequency_conversion),'说明':'无噪声混频器真值；不是可自行变频的 DummyDUT 模型'},[])
     matrix=np.stack((np.stack((c11,t),axis=-1),np.stack((t,c22),axis=-1)),axis=-2)
+    if inverted: matrix[:,1,1]=matrix[:,1,1].conj()
     max_sv=float(np.max(np.linalg.svd(matrix,compute_uv=False)))
-    manifest={'version':'1.7.0','options':asdict(o),'z0_ohm':z0,'frequency_conversion':o.frequency_conversion,'if_relation':relation+' (non-inverting)',
-        'phase_reference':'Phases are at RF start; phase slope is -2*pi*(RF-RF_start)*delay',
-        'model':'m=D+R*Gamma/(1-S*Gamma); output reflection=C11+C12*C21*Gamma/(1-C22*Gamma)',
+    manifest={'version':'1.8.0','options':asdict(o),'z0_ohm':z0,'frequency_conversion':o.frequency_conversion,'if_relation':relation,'spectral_inversion':inverted,'phase_convention':phase_convention(o.frequency_conversion),
+        'phase_reference':'Phases at first paired point; S22 uses physical IF slope for high_side, other mixer coefficients use RF slope',
+        'model':('Independent conjugate-wave solve; input reflection=C11+S12*S21*conj(Gamma)/(1-conj(S22)*conj(Gamma))' if inverted else 'm=D+R*Gamma/(1-S*Gamma); output reflection=C11+C12*C21*Gamma/(1-C22*Gamma)'),
         'truth_reference_root_sign':1 if abs(np.sqrt(t[0]*t[0])-t[0]) <= abs(np.sqrt(t[0]*t[0])+t[0]) else -1,
         'reciprocal_assumption':True,'measurement_columns':'Only S11 is meaningful; S21/S12/S22 are zero placeholders',
         'mixer_truth_noise_free':True,'standard_sampling':o.standard_sampling,
@@ -202,6 +222,7 @@ def generate_files(standard_paths, output_parent, options=SimulationOptions()):
     try:
         z0=result.manifest['z0_ohm'];f=result.frequency;zeros=np.zeros(len(f),complex)
         common=[f'RF_Hz={f[0]:.17g}..{f[-1]:.17g}; LO_Hz={options.lo_hz:.17g}; {frequency_relation(options.frequency_conversion)}',
+                'PhaseConvention='+phase_convention(options.frequency_conversion),
                 'StandardSampling='+options.standard_sampling+'; InterpolationCoordinates='+result.manifest['interpolation_coordinates'],
                 f'NoiseEnabled={options.noise_enabled}; ComplexNoiseRMS={result.manifest["noise"]["effective_complex_rms"]:.17g}']
         for i,name in enumerate(MEASUREMENT_NAMES):
@@ -209,7 +230,7 @@ def generate_files(standard_paths, output_parent, options=SimulationOptions()):
             text=s2p_text(f,values,z0,['SYNTHETIC SOL ACQUISITION: only S11 is meaningful; remaining S are zero placeholders.']+common)
             (stage/name).write_text(text,encoding='utf-8')
         text=s2p_text(f,result.truth.s,z0,['SYNTHETIC MIXER TRUTH: reciprocal, noise-free; RF stimulus axis.',
-                    'Effective frequency-translating coefficients; not a frequency-converting DummyDUT S2P.']+common[:2])
+                    'Effective frequency-translating coefficients; not a frequency-converting DummyDUT S2P.']+common[:3])
         (stage/'Mixer.s2p').write_text(text,encoding='utf-8');result.truth.raw_text=text
         for kind,blob in zip(('Open','Short','Load'),result.standard_bytes):
             (stage/f'Standard_{kind}.s1p').write_bytes(blob)

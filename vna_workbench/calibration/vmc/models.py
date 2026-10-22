@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import numpy as np
 from vna_workbench.data.models import Dataset
 
-VERSION = '1.7.0'
+VERSION = '1.8.0'
 
 
 GROUPS = ('P1_RF', 'P1_IF', 'P2_RF', 'P2_IF')

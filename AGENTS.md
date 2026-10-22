@@ -35,7 +35,7 @@ GUI 不得复制另一套算法公式。耗时计算和文件 I/O 继续放到�
 
 1. 六个采集输入按 `[input_open,input_short,input_load,output_open,output_short,output_load]` 排列，均读取 S11，横轴均为 RF。生成文件的 S21 / S12 / S22 是零占位，不代表完整标准网络。
 2. GUI 输入共用 `[OPEN,SHORT,LOAD]` 三个 S1P。第一轮标准在 RF 求值，第二轮在映射 IF 求值。数值 API 兼容旧六标准路径，但不得默认使用两套不同标准。
-3. `frequency_conversion='down'`：IF=RF−LO，所有 RF 必须大于正 LO。`'up'`：IF=RF+LO，允许 LO 高于 RF。两者是非反转分支，固定 LO 下 dIF/dRF=+1。不用 abs(RF−LO) 代替，也不把 LO−RF 反转分支当作已支持功能。
+3. `frequency_conversion='down'`：IF=RF−LO，所有 RF 必须大于正 LO。`'up'`：IF=RF+LO，允许 LO 高于 RF。两者是非反转分支，固定 LO 下 dIF/dRF=+1。不用 abs(RF−LO) 代替，也LO−RF 使用独立 high_side 模式（v1.10.0 新增），要求 LO>全部 RF。
 4. 仅保留 `linear_ri` / `cubic_ri`：v1.5.1 起 `linear_ri` 是历史兼容键，实际对线性幅度 `abs(Gamma)` 和 `unwrap(angle(Gamma))` 分别线性插值，再重构复数；不要退回实虚部线性，也不要改成 dB 插值。v1.5.2 起 `cubic_ri` 也是历史兼容键，实际对线性幅度和解缠绕相位分别三次样条插值，再重构复数；不要退回实虚部样条。精确节点优先；默认容差 0.001 Hz；禁止外推；拒绝容差内多节点、重复节点。三次样条边界为 not-a-knot；不要改成 natural 或偷偷裁剪标准频带。恒零 LOAD 保持零；非恒零标准含零幅度且需要任一种插值时拒绝，不给零幅度虚构相位；全部命中精确节点则保留原值。样条若产生负幅度须报错，不取绝对值、不钳位；可建议幅相线性或调整标准定义。
 5. 测量数据不插值、不自动重排 / 丢点；六个网格必须一致且严格递增。标准和测量参考阻抗须一致，不自动重归一化。病态标准、分母近零、非有限值明确报错。
 6. 一端口模型 `m=D+R*Gamma/(1-E*Gamma)`，D=EDF、R=ERF、E=ESF。线性解 `m=A+B*Gamma+E*m*Gamma`，恢复 `D=A, R=B+A*E`。ERF 不是单程 S21。
@@ -117,3 +117,14 @@ GUI 检查控件只有两种插值、方向改变后的结果失效、生成到�
 ## 结构重构约定（v1.9.0）
 
 根目录仅保留 main.py 入口，旧平铺模块不继续作为导入入口；迁移映射见架构文档。公共算法函数签名、文件 schema、算法报告版本 1.7.0 和旧 QSettings 命名空间保持。不得引入从 core/data/analysis/calibration 到 GUI 的依赖。生成器只在 SavedVMCSimulation 的显式一键载入适配方法中委托 app/workflows.py，不在正向计算中调用校准器。历史验证记录的旧模块名与测试结果保留，链接指向实际迁移后的路径。
+
+
+## 高边 LO 约定（v1.10.0，算法 / 报告 1.8.0）
+
+- high_side=LO−RF；IF 按 RF 点序递减。标准 / 原始 IF 文件仍递增保存，数值列与频率一起排序；内部不打乱 RF→IF 配对。dual 用频段 min/max 判断交集，端点接触也禁止。
+- 表征第一轮不共轭，第二轮仅将按 IF 求值后的标准共轭。Möbius 输出 C22 为输入参考等效反射，导出物理 S22 时共轭回来；两路径诊断在转换前比较。
+- 文件反射 S11/S22 为物理量，S12/S21 为输入参考等效量：b1=S11*a1+S12*conj(a2)，b2=conj(S21)*conj(a1)+S22*a2（LO 相位规范 0）。传输开方仍基于等效互易假设，不宣称识别绝对 LO 相位。
+- 原始 SM21 为物理接收响应；ETF / VC21 求解使用 conj(SM21)、conj(IF_ELF)、conj(S22)，物理端口 SOL/THRU 不共轭。不得把这一约定未经验证称为 Keysight 内部约定。
+- 高边原始生成使用 simulation/conjugate_waves.py 的独立实线性波量求解，不调用反演算法。内置非理想 SOL 仅为测试用，用户和 Keysight 需加载生成的同一套定义。
+- 高边预设为 RF 10～15 / LO 20 GHz、RF 横轴、无噪声；保留模型参数。旧默认仍为上变频，不改变已有文件含义。
+- 新增测试：tests/vmc/test_high_side.py、tests/gui/gui_high_side_smoke.py。验证记录与使用条件不写入 docs/algorithms 公式页。

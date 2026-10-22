@@ -5,7 +5,7 @@ from vna_workbench.data.touchstone import parse_s2p
 from vna_workbench.data.models import Standard
 from vna_workbench.data.standard_definitions import parse_s1p
 from vna_workbench.core.standard_sampling import sample_standard, SAMPLING_METHODS
-from vna_workbench.core.frequency_conversion import output_frequencies
+from vna_workbench.core.frequency_conversion import output_frequencies, bands_overlap
 from vna_workbench.calibration.vmc.models import CalibrationInputs, GROUPS, AXIS_MODES
 
 def validate_axes(o):
@@ -19,7 +19,7 @@ def validate_axes(o):
         raise ValueError('未知插值方式或频率轴。')
     rf=np.linspace(o.rf_start_hz,o.rf_stop_hz,int(o.points))
     iff=output_frequencies(rf,o.lo_hz,o.frequency_conversion)
-    if o.raw_axis=='dual' and max(rf[0],iff[0]) <= min(rf[-1],iff[-1]):
+    if o.raw_axis=='dual' and bands_overlap(rf,iff):
         raise ValueError('双频段复制编码要求 RF / IF 不重叠；请改用 RF 或 IF 横轴文件。')
     return rf,iff
 

@@ -1,5 +1,13 @@
 # VNA Calibration Workbench · VNA 校准与验证工作台 · v1.9.0
 
+## v1.10.0：高边 LO 验证
+
+新增 `IF=LO−RF` 频谱反转模式，贯通两轮 SOL 表征、原始 SNP 生成、VMC 误差项和校准 MUT。两个生成界面均提供 **RF 10～15 GHz / LO 20 GHz** 验证预设，以及带偏移相位和非零 LOAD 的内置合成 SOL。
+
+高边模式自动共轭第二轮标准；S22 导出物理反射，VC21 导出输入参考等效传输。原始接收响应和相位参考 CSV 分开标注；RF / IF / 不重叠 dual 文件正确配对与排序。算法 / 报告版本 1.8.0，旧非反转流程兼容。
+
+操作与 Keysight 比较说明见 [高边 LO 验证流程](docs/guides/high_side_vmc.md)。Keysight 现场结果仍待用户验证。
+
 启动默认进入 **数据查看 → 单文件查看**，支持独立打开 S2P / Keysight Converter Sweep Data S2PX；**双文件比较**独立选择 A/B，显示叠加曲线及匹配频点后的差异统计。还提供 VMC 研发流程：生成仿真数据、表征校准混频器、计算误差项和校准 MUT。Python 3.10+，PyQt6、NumPy、SciPy、Matplotlib；无需连接仪器。通用 SOLT / TRL / 多端口等算法仍属于升级规划，当前文件查看器仍面向双端口数据。
 
 ## 名称与使用说明

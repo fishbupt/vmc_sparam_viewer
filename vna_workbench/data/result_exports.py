@@ -7,7 +7,9 @@ def export_mut(result,path):
     data=result.dataset;f=data.axes['InputFreq'];iff=data.axes['OutputFreq']
     z0=result.manifest['calibration']['options']['z0']
     lines=['! VMC calibrated MUT; S21=VC21; RF axis; IF=see frequency_map.csv.',
-        '! S12 is NOT calibrated; zero placeholder. Unilateral MUT model.',f'# Hz S RI R {z0:.17g}']
+        '! S12 is NOT calibrated; zero placeholder. Unilateral MUT model.',
+        '! PhaseConvention='+result.manifest.get('phase_convention','legacy non-inverting'),
+        f'# Hz S RI R {z0:.17g}']
     for i,frequency in enumerate(f):
         row=[frequency]
         for p in ('S11','S21','S12','S22'):

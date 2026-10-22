@@ -21,10 +21,11 @@ from vna_workbench.data.standard_definitions import parse_s1p
 from vna_workbench.core.standard_sampling import sample_standard, SAMPLING_METHODS, INTERPOLATION_COORDINATES
 from vna_workbench.data.models import Dataset, PARAMS
 from vna_workbench.data.touchstone import parse_s2p
-from vna_workbench.core.frequency_conversion import output_frequencies, frequency_relation
+from vna_workbench.core.frequency_conversion import output_frequencies, frequency_relation, is_inverting, phase_convention, bands_overlap
+from vna_workbench.simulation.conjugate_waves import high_side_measurement
 from vna_workbench.data.touchstone import s2p_text
 
-VERSION = '1.7.0'
+VERSION = '1.8.0'
 RAW_NAMES = ('open_raw.s2p', 'short_raw.s2p', 'load_raw.s2p', 'thru_raw.s2p',
              'cal_mixer_raw.s2p', 'mut_raw.s2p')
 
@@ -67,6 +68,7 @@ class VMCSimulationOptions:
     mut: MixerModel = field(default_factory=lambda: MixerModel(-14,40,35,-16,-55,25,-9,15,110))
     port1: PortModel = field(default_factory=PortModel)
     port2: PortModel | None = None     # None: same box at the same physical frequency.
+    synthetic_sol: bool = False     # Complex verification kit, never a physical kit.
     noise_enabled: bool = False
     noise_floor_db: float = -90
     noise_seed: int = 20261009
@@ -116,11 +118,12 @@ def port_box(f, model, anchor):
                           getattr(model,p+'_delay_ps'),anchor) for p in ('edf','esf','tracking'))
 
 
-def mixer_matrix(rf, model, reciprocal=True):
+def mixer_matrix(rf, model, reciprocal=True, if_frequency=None):
     c=np.zeros((len(rf),2,2),complex)
     for prefix,i,j in [('s11',0,0),('s22',1,1),('transmission',1,0)]:
-        c[:,i,j]=response(rf,getattr(model,prefix+'_db'),getattr(model,prefix+'_phase_deg'),
-                          getattr(model,prefix+'_delay_ps'),rf[0])
+        axis=if_frequency if prefix=='s22' and if_frequency is not None else rf
+        c[:,i,j]=response(axis,getattr(model,prefix+'_db'),getattr(model,prefix+'_phase_deg'),
+                          getattr(model,prefix+'_delay_ps'),axis[0])
     if reciprocal:c[:,0,1]=c[:,1,0]
     return c
 
@@ -170,16 +173,16 @@ def _validate(o):
                 if not -300<=v<=hi or (hi==0 and v==0):raise ValueError(f.name+' 超出幅度范围。')
     rf=np.linspace(o.rf_start_hz,o.rf_stop_hz,int(o.points))
     iff=output_frequencies(rf,o.lo_hz,o.frequency_conversion)
-    if np.any(np.diff(rf)<=0) or np.any(np.diff(iff)<=0):
+    if np.any(np.diff(rf)<=0) or np.any((-1 if is_inverting(o.frequency_conversion) else 1)*np.diff(iff)<=0):
         raise ValueError('频率跨度或 LO 导致频点精度不足，请调整配置。')
-    if o.raw_axis=='dual' and max(rf[0],iff[0])<=min(rf[-1],iff[-1]):
+    if o.raw_axis=='dual' and bands_overlap(rf,iff):
         raise ValueError('双频段复制要求 RF / IF 不重叠；请选择 RF 或 IF 横轴。')
     return rf,iff
 
 
 def _physical_axis(rf,iff,tol):
     # Include exact requested nodes; fill a disjoint gap only for Dummy DUT coverage.
-    low,high=sorted((rf,iff),key=lambda f:f[0]);gap=np.array([])
+    low,high=sorted((np.sort(rf),np.sort(iff)),key=lambda f:f[0]);gap=np.array([])
     if low[-1]<high[0]:
         step=rf[1]-rf[0];count=int(np.ceil((high[0]-low[-1])/step))-1
         if count>200001:raise ValueError('RF / IF 间隔导致文件过大，请减少点数或调整 LO。')
@@ -227,13 +230,19 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
                  calibration_mixer_path=None, mixer_definition_axis='rf'):
     o=options;rf,iff=_validate(o);f=_physical_axis(rf,iff,o.frequency_tolerance_hz)
     if mixer_definition_axis not in ('rf','if'):raise ValueError('校准混频器定义横轴须为 RF 或 IF。')
+    inverted=is_inverting(o.frequency_conversion)
     reader=DefinitionReader(o)
     if standard_paths is not None and len(standard_paths)!=3:raise ValueError('须选择 OPEN / SHORT / LOAD 三个 S1P。')
+    if standard_paths is not None and o.synthetic_sol:
+        raise ValueError('内置验证 SOL 与导入 SOL 不能同时使用。')
     # The same actual standards are used at both physical ports, as requested.
     standards={}
     for i,(k,g) in enumerate(zip(('open','short','load'),(1,-1,0))):
         standards[k]=(np.full(len(f),g,complex) if standard_paths is None else
                       reader.sample(reader.read(standard_paths[i],True),'S11',f))
+    if o.synthetic_sol:
+        from vna_workbench.simulation.verification_kit import verification_gamma
+        standards=dict(zip(('open','short','load'),verification_gamma(f)))
     gamma=list(standards.values())
     if any(np.any(abs(gamma[i]-gamma[j])<1e-10) for i in range(3) for j in range(i)):
         raise ValueError('OPEN / SHORT / LOAD 定义在某些频点重合或过于接近。')
@@ -245,9 +254,9 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
     if calibration_mixer_path:
         cd=reader.read(calibration_mixer_path);target=rf if mixer_definition_axis=='rf' else iff
         cal_values={p:reader.sample(cd,p,target) for p in PARAMS};cal=_matrix(cal_values)
-    else:cal=mixer_matrix(rf,o.calibration_mixer)
+    else:cal=mixer_matrix(rf,o.calibration_mixer,if_frequency=iff if inverted else None)
     if np.any(abs(cal[:,1,0])<1e-12):raise ValueError('校准混频器 S21 不能为零。')
-    mut=mixer_matrix(rf,o.mut,False)
+    mut=mixer_matrix(rf,o.mut,False,if_frequency=iff if inverted else None)
     b1=port_box(f,o.port1,rf[0]);b2=port_box(f,o.port2 or o.port1,rf[0])
     mixed_b1=port_box(rf,o.port1,rf[0]);mixed_b2=port_box(iff,o.port2 or o.port1,rf[0])
     clean={}
@@ -255,8 +264,9 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
         c=np.zeros((len(f),2,2),complex);c[:,0,0]=standards[k];c[:,1,1]=standards[k]
         clean[k+'_raw.s2p']=forward_wave(c,b1,b2)
     clean['thru_raw.s2p']=forward_wave(_matrix(thru),b1,b2)
-    mixed_clean={'cal_mixer_raw.s2p':forward_wave(cal,mixed_b1,mixed_b2),
-                 'mut_raw.s2p':forward_wave(mut,mixed_b1,mixed_b2)}
+    mixed_forward=high_side_measurement if inverted else forward_wave
+    mixed_clean={'cal_mixer_raw.s2p':mixed_forward(cal,mixed_b1,mixed_b2),
+                 'mut_raw.s2p':mixed_forward(mut,mixed_b1,mixed_b2)}
     sigma=10**(o.noise_floor_db/20)/np.sqrt(o.noise_averages) if o.noise_enabled else 0.
     rng=np.random.Generator(np.random.PCG64(int(o.noise_seed)))
     def noisy(c,sol=False):
@@ -281,7 +291,8 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
         mixed_f=f
     else:
         mixed_f=rf if o.raw_axis=='rf' else iff
-        def encode(c):return c.copy()
+        order=np.argsort(mixed_f);mixed_f=mixed_f[order]
+        def encode(c):return c[order].copy()
     for k in mixed_clean:clean[k]=encode(mixed_clean[k]);raw[k]=encode(mixed_raw[k])
     terms={}
     for band,axis in [('RF',rf),('IF',iff)]:
@@ -290,7 +301,7 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
             terms.update({f'P{port}_{band}_EDF':d,f'P{port}_{band}_ESF':e,f'P{port}_{band}_ERF':t*t})
         terms.update({band+'_ELF':boxes[1][1],band+'_ELR':boxes[0][1],
                       band+'_ETF':boxes[0][2]*boxes[1][2],band+'_ETR':boxes[0][2]*boxes[1][2]})
-    terms['VMC_ETF']=mixed_b1[2]*mixed_b2[2]
+    terms['VMC_ETF']=mixed_b1[2]*(mixed_b2[2].conj() if inverted else mixed_b2[2])
     axes={'StimulusFreq':rf,'InputFreq':rf,'OutputFreq':iff,'LO1Freq':np.full(len(rf),o.lo_hz)}
     def dataset(name,c):
         return Dataset(name,'S2P / VMC simulated truth',_params(c),{k:v.copy() for k,v in axes.items()},
@@ -301,14 +312,20 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
               'Keysight Dummy DUT receiver lookup/processing requires external validation.']
     if not np.allclose(cal[:,0,1],cal[:,1,0],rtol=1e-6,atol=1e-12):warnings.append('Imported calibration mixer is not reciprocal; Keysight VMC requires reciprocity.')
     for name,c in [('calibration_mixer',cal),('MUT',mut)]:
-        if np.max(np.linalg.svd(c,compute_uv=False))>1+1e-10:
+        effective=c.copy()
+        if inverted:effective[:,1,1]=effective[:,1,1].conj()
+        if np.max(np.linalg.svd(effective,compute_uv=False))>1+1e-10:
             warnings.append(name+' effective S-matrix singular value exceeds one; passivity is not enforced.')
-    manifest={'version':VERSION,'options':asdict(o),'if_relation':frequency_relation(o.frequency_conversion),
-              'sol_definition':'ideal +1/-1/0, zero offset' if standard_paths is None else 'imported actual shared S1P',
+    if inverted:
+        warnings.append('High-side raw SM21 is physical; truth S21/VC21 is input-referred equivalent. Compare the documented convention before Keysight phase validation.')
+        if standard_paths is None and not o.synthetic_sol:
+            warnings.append('Ideal +1/-1/0 SOL cannot detect missing standard conjugation; use nonideal complex standards for characterization validation.')
+    manifest={'version':VERSION,'spectral_inversion':inverted,'phase_convention':phase_convention(o.frequency_conversion),'options':asdict(o),'if_relation':frequency_relation(o.frequency_conversion),
+              'sol_definition':('synthetic nonideal verification SOL; NOT a physical Keysight kit' if o.synthetic_sol else 'ideal +1/-1/0, zero offset' if standard_paths is None else 'imported actual shared S1P'),
               'thru_definition':'ideal Flush: S11=S22=0, S21=S12=1, zero delay/loss' if not thru_path else 'imported full S2P',
               'calibration_mixer_definition':'RF normalized output; '+('imported '+mixer_definition_axis if calibration_mixer_path else 'analytical reciprocal model'),
-              'model':'a=T+E*b; b=C*a; M=D+T*b, solved independently for both port excitations',
-              'phase_reference':'Mixer phases at RF start; port-box phases at physical f=RF start',
+              'model':('Independent real-linear conjugate-wave solve; physical receivers M=D+T*b' if inverted else 'a=T+E*b; b=C*a; M=D+T*b, solved independently for both port excitations'),
+              'phase_reference':'Mixer phases at first paired point; high_side S22 slope uses IF, transfers use RF; port-box phases at physical f=RF start',
               'standard_sampling':o.standard_sampling,'interpolation_coordinates':INTERPOLATION_COORDINATES[o.standard_sampling],
               'extrapolation':False,'source_inputs':reader.sources,'interpolated_points':reader.counts,
               'noise':{'enabled':o.noise_enabled,'effective_complex_rms':float(sigma),'seed':int(o.noise_seed),
@@ -337,7 +354,8 @@ def generate_vmc_files(output_parent, options=VMCSimulationOptions(), standard_p
     try:
         o=options;common=[f'Synthetic VMC; {frequency_relation(o.frequency_conversion)}; LO_Hz={o.lo_hz:.17g}',
             'RawAxis='+o.raw_axis+'; measurements include port errors; definitions/truth are noise-free.',
-            'Port-box phases anchored at physical RF start; mixer phases anchored at RF start.']
+            'Port-box phases anchored at physical RF start; mixer phases anchored at first paired point.',
+            'PhaseConvention='+phase_convention(o.frequency_conversion)]
         for name in RAW_NAMES:
             f=sim.mixed_frequency if name in RAW_NAMES[4:] else sim.physical_frequency
             comments=common+[('Effective RF->IF matrix; dual bands are identical; gap bridge is not measured.' if name in RAW_NAMES[4:] else
@@ -350,9 +368,16 @@ def generate_vmc_files(output_parent, options=VMCSimulationOptions(), standard_p
             (stage/f'standard_{k}.s1p').write_text('\n'.join(lines)+'\n',encoding='utf-8')
         (stage/'thru_definition.s2p').write_text(s2p_text(sim.physical_frequency,sim.thru,o.z0,[sim.manifest['thru_definition']]),encoding='utf-8')
         for ds in (sim.calibration_mixer,sim.mut):
-            text=s2p_text(sim.frequency,ds.s,o.z0,['Noise-free effective mixer truth; RF stimulus axis.']+common[:1])
+            text=s2p_text(sim.frequency,ds.s,o.z0,['Noise-free effective mixer truth; RF stimulus axis.']+[common[0],common[3]])
             (stage/ds.name).write_text(text,encoding='utf-8');ds.raw_text=text
             (stage/(Path(ds.name).stem+'.csv')).write_text(csv_record({'RF_Hz':sim.frequency,'IF_Hz':sim.if_frequency},ds.s),encoding='utf-8-sig')
+        if is_inverting(o.frequency_conversion):
+            (stage/'high_side_phase_reference.csv').write_text(csv_record(
+                {'RF_Hz':sim.frequency,'IF_Hz':sim.if_frequency},
+                {'MUT_VC21_input_equivalent':sim.mut.s['S21'],
+                 'MUT_K21_physical_LO_gauge_zero':sim.mut.s['S21'].conj(),
+                 'CAL_C21_input_equivalent':sim.calibration_mixer.s['S21'],
+                 'CAL_K21_physical_LO_gauge_zero':sim.calibration_mixer.s['S21'].conj()}),encoding='utf-8-sig')
         (stage/'expected_error_terms.csv').write_text(csv_record({'RF_Hz':sim.frequency,'IF_Hz':sim.if_frequency},sim.expected_terms),encoding='utf-8-sig')
         mapping=io.StringIO();w=csv.writer(mapping);w.writerow(['RF_Hz','IF_Hz','LO_Hz']);w.writerows(zip(sim.frequency,sim.if_frequency,np.full(len(sim.frequency),o.lo_hz)))
         (stage/'frequency_map.csv').write_text(mapping.getvalue(),encoding='utf-8-sig')
@@ -368,6 +393,7 @@ def generate_vmc_files(output_parent, options=VMCSimulationOptions(), standard_p
 
 Six raw files: {', '.join(RAW_NAMES)}.
 RF {sim.frequency[0]/1e9:g}..{sim.frequency[-1]/1e9:g} GHz; IF {sim.if_frequency[0]/1e9:g}..{sim.if_frequency[-1]/1e9:g} GHz; {frequency_relation(o.frequency_conversion)}.
+Phase convention: {sim.manifest['phase_convention']}.
 Raw mixer axis: {o.raw_axis}; calibration_mixer.s2p / mut_truth.s2p axis: RF.
 SOL: {sim.manifest['sol_definition']}.
 THRU: {sim.manifest['thru_definition']}.

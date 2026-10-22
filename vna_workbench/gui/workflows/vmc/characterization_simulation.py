@@ -28,7 +28,7 @@ class SimulationDialog(QDialog):
         self.worker=None;self.result=None;self.controls=[];self.parameters={}
         layout=QVBoxLayout(self)
         intro=QLabel('基于共用 OPEN / SHORT / LOAD 定义生成六个原始测量 S2P 和无噪声 Mixer.s2p。\n'
-            '固定 LO、可选 IF=RF−LO 下变频 / IF=RF+LO 上变频、互易模型；六个测量文件仅 S11 有效。相位参数以 RF 起点为参考。')
+            '支持 RF−LO、RF+LO 和高边 LO−RF；六个测量文件仅 S11 有效。高边 LO 的 S22 时延按 IF 计算，传输为输入参考等效系数。')
         intro.setWordWrap(True);layout.addWidget(intro)
         splitter=QSplitter(Qt.Orientation.Horizontal);layout.addWidget(splitter,1)
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setMinimumWidth(580)
@@ -43,6 +43,10 @@ class SimulationDialog(QDialog):
             self.standards.append(field);self.controls.extend((field,btn))
         reuse=QPushButton('复用表征窗口最近使用的三个标准件');reuse.clicked.connect(self.reuse_kit)
         grid.addWidget(reuse,3,0,1,3);self.controls.append(reuse)
+        self.synthetic_kit=QCheckBox('使用内置非理想 SOL（测试用，忽略上方导入文件）')
+        self.synthetic_kit.setChecked(self.settings.value('synthetic_kit',False,type=bool))
+        self.synthetic_kit.toggled.connect(self.invalidate)
+        grid.addWidget(self.synthetic_kit,4,0,1,3);self.controls.append(self.synthetic_kit)
         defaults=SimulationOptions()
         sweep=QGroupBox('扫频与标准求值');form=QFormLayout(sweep);left.addWidget(sweep)
         for name,label,factor,low,high,dec in [
@@ -58,6 +62,8 @@ class SimulationDialog(QDialog):
         self.conversion.setCurrentIndex(max(0,self.conversion.findData(self.settings.value('frequency_conversion','down'))))
         self.conversion.currentIndexChanged.connect(self.invalidate);self.controls.append(self.conversion)
         form.addRow('IF 相对 RF 的变频方向',self.conversion)
+        self.high_side_btn=QPushButton('高边 LO 验证预设：RF 10～15 / LO 20 GHz')
+        self.high_side_btn.clicked.connect(self.high_side_preset);self.controls.append(self.high_side_btn);form.addRow(self.high_side_btn)
         self.sampling=QComboBox()
         for name,label in SAMPLING_METHODS.items():self.sampling.addItem(label,name)
         saved_sampling=self.settings.value('standard_sampling','cubic_ri')
@@ -104,6 +110,12 @@ class SimulationDialog(QDialog):
         for widget in (self.run_btn,self.characterize_btn,self.progress,close):actions.addWidget(widget)
         self.update_noise_controls()
 
+    def high_side_preset(self):
+        for name,value in [('rf_start_hz',10),('rf_stop_hz',15),('lo_hz',20),('points',201)]:
+            self.parameters[name][0].setValue(value)
+        self.conversion.setCurrentIndex(self.conversion.findData('high_side'))
+        self.synthetic_kit.setChecked(True);self.noise.setChecked(False)
+
     def number(self,name,default,low,high,dec):
         box=QDoubleSpinBox();box.setRange(low,high);box.setDecimals(dec);box.setValue(float(self.settings.value(name,default)))
         box.valueChanged.connect(self.invalidate);self.controls.append(box);return box
@@ -143,17 +155,18 @@ class SimulationDialog(QDialog):
     def compute(self):
         if self.worker:return
         paths=[e.text().strip() for e in self.standards];parent=self.directory.text().strip()
-        if not all(paths) or not parent:
+        if (not self.synthetic_kit.isChecked() and not all(paths)) or not parent:
             QMessageBox.warning(self,'缺少输入','请选择 OPEN、SHORT、LOAD 三个 S1P 和输出目录。');return
         self.invalidate();opts=self.options()
         for name,(box,factor) in self.parameters.items():self.settings.setValue(name,box.value())
         self.settings.setValue('standard_sampling',opts.standard_sampling);self.settings.setValue('noise_enabled',opts.noise_enabled)
         self.settings.setValue('frequency_conversion',opts.frequency_conversion)
+        self.settings.setValue('synthetic_kit',self.synthetic_kit.isChecked())
         self.settings.setValue('output_parent',parent)
         for kind,path in zip(('open','short','load'),paths):self.settings.setValue('kit/'+kind,path)
         for c in self.controls:c.setEnabled(False)
         self.run_btn.setEnabled(False);self.progress.show();self.summary.setText('正在求标准值并生成正向响应、噪声和文件…')
-        self.worker=Worker(generate_files,(paths,parent,opts),self)
+        self.worker=Worker(generate_files,(None if self.synthetic_kit.isChecked() else paths,parent,opts),self)
         self.worker.done.connect(self.accept_result);self.worker.failed.connect(self.failed);self.worker.finished.connect(self.finish);self.worker.start()
 
     def accept_result(self,result):

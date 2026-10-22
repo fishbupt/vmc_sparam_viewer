@@ -1,3 +1,4 @@
+from vna_workbench.core.frequency_conversion import is_inverting, phase_convention
 import hashlib
 import io
 import json
@@ -10,7 +11,10 @@ from vna_workbench.data.archives import csv_record, atomic_zip
 
 def validate_calibration(cal):
     if cal.manifest.get('schema')!='vmc-calibration-1': raise ValueError('不支持的 VMC 校准包版本。')
-    rf,iff=validate_axes(CalibrationOptions(**cal.manifest['options']))
+    options=CalibrationOptions(**cal.manifest['options'])
+    if is_inverting(options.frequency_conversion) and cal.manifest.get('phase_convention') != phase_convention(options.frequency_conversion):
+        raise ValueError('高边 LO 校准包缺少或不匹配相位约定，请重新计算误差项。')
+    rf,iff=validate_axes(options)
     if not np.array_equal(rf,cal.frequency) or not np.array_equal(iff,cal.if_frequency):
         raise ValueError('校准包的频率轴与配置不一致。')
     expected={g+'_'+n for g in GROUPS for n in ('EDF','ESF','ERF')}

@@ -10,6 +10,7 @@ def s2p_text(result):
     d = result.dataset
     lines = ['! VMC calibration mixer + filter characterization',
              f'! Stimulus=RF; {result.manifest["if_relation"]}; reciprocal S21=S12',
+             '! PhaseConvention='+result.manifest.get('phase_convention', 'legacy non-inverting'),
              f'! LO_Hz={result.manifest["lo_hz"]:.17g}',
              f'! SecondRound={result.manifest["second_round"]}; StandardSampling={result.manifest["standard_sampling"]}',
              f'! InterpolationCoordinates={result.manifest["interpolation_coordinates"]}',
@@ -28,6 +29,7 @@ def s2px_text(result):
     d = result.dataset
     out = io.StringIO()
     out.write('!CSV A.01.00\n!Source: Self-developed Mixer Characterization (not a Keysight-generated file)\n')
+    out.write('!PhaseConvention: '+result.manifest.get('phase_convention','legacy non-inverting')+'\n')
     out.write(f'!Reference Impedance: {result.manifest["z0_ohm"]:.17g} ohm\n')
     writer = csv.writer(out)
     writer.writerow(['SegIndex', 'InputFreq', 'OutputFreq', 'LO1Freq']+

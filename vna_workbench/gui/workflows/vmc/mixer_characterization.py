@@ -22,8 +22,8 @@ class CharacterizeDialog(QDialog):
         self.settings = QSettings('VNAAlgorithmTools', 'MixerCharacterization')
         self.worker = None; self.result = None
         layout = QVBoxLayout(self)
-        intro = QLabel('两轮采集均读取 S2P 的 S11（RF 横轴）。第一轮标准定义取 RF；第二轮取 IF=RF−LO（下变频）或 RF+LO（上变频）。\n'
-                       '先解 SOL，再消除输入误差；传输采用互易假设，输出高精度 RI S2P。')
+        intro = QLabel('两轮采集均读取 S2P 的 S11（RF 横轴）。第一轮标准定义取 RF；第二轮按 IF 求值；LO−RF 高边模式自动对第二轮标准取共轭。\n'
+                       '先解 SOL，再消除输入误差；传输采用等效互易假设；S22 输出物理反射，高边传输相位为输入参考。')
         intro.setWordWrap(True); layout.addWidget(intro)
         group = QGroupBox('两轮 SOL 的六个测量文件（S2P）')
         grid = QGridLayout(group)

@@ -62,3 +62,31 @@ transfer = sign*np.sqrt(np.abs(product))*np.exp(.5j*np.unwrap(np.angle(product))
 ```
 
 `characterize()` 将 `transfer` 同时作为结果的 S12 和 S21。
+
+## 高边 LO 的物理量与等效量
+
+**函数：** `core/frequency_conversion.py` → `phase_convention()`；`characterize()` 的 `inverted` 分支；`simulation/conjugate_waves.py` → `high_side_waves()`。
+
+采用零 LO 相位规范，文件 S11/S22 为物理反射，S12/S21 为输入参考等效传输：
+
+
+\[
+b_1=S_{11}a_1+S_{12}a_2^*,\qquad
+b_2=S_{21}^*a_1^*+S_{22}a_2.
+\]
+
+\[
+\Gamma_{in}=S_{11}+\frac{S_{12}S_{21}\Gamma_L^*}{1-S_{22}^*\Gamma_L^*}.
+\]
+
+第二轮求解使用 `gamma[:, 3:] = conj(Gamma_IF)`；上述 Möbius 消除得到
+\(C_{11}=S_{11}, C_{22}=S_{22}^*, P=S_{12}S_{21}\)。
+
+```python
+# 在两条提取路径交叉校验后，还原物理端口反射
+if inverted:
+    c22 = c22.conj()
+transfer = continuous_root(product, options.root_sign)
+```
+
+第一轮标准和采集 S11 不共轭。`continuous_root()` 对等效互易网络开方；物理正向转换系数在本 LO 相位规范下为 `conj(transfer)`，绝对 LO 相位不由反射 SOL 确定。

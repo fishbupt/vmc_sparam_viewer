@@ -1,4 +1,5 @@
 from dataclasses import asdict
+from vna_workbench.core.frequency_conversion import is_inverting, phase_convention
 import numpy as np
 from vna_workbench.data.models import Dataset
 from vna_workbench.data.models import Standard
@@ -54,15 +55,20 @@ def calibrate(inputs, options=CalibrationOptions()):
     c={p:reader.defined(inputs.calibration_mixer,p,definition_axis) for p in ('S11','S21','S12','S22')}
     m=reader.mixed(inputs.cal_mixer_raw,rf,iff)
     sf=terms['P1_RF_ESF'];lf=terms['IF_ELF']
+    inverted=is_inverting(options.frequency_conversion)
+    sm21=m['S21']
+    if inverted:
+        c['S22']=c['S22'].conj();lf=lf.conj();sm21=sm21.conj()
     den=(1-c['S11']*sf)*(1-c['S22']*lf)-c['S12']*c['S21']*sf*lf
     check_nonzero(c['S21'],'校准混频器 S21');check_nonzero(den,'校准混频器变频分母')
-    terms['VMC_ETF']=m['S21']*den/c['S21']
+    terms['VMC_ETF']=sm21*den/c['S21']
     check_nonzero(terms['VMC_ETF'],'VMC ETF')
     manifest={'schema':'vmc-calibration-1','version':VERSION,'options':asdict(options),
+        'spectral_inversion':inverted,'phase_convention':phase_convention(options.frequency_conversion),
         'input_mapping':asdict(inputs),'sources':list(reader.sources.values()),
         'interpolated_points':reader.interpolated,'interpolation_coordinates':INTERPOLATION_COORDINATES[options.standard_sampling],
         'diagnostics':diagnostics,'thru_method':'defined per band' if inputs.thru_definition else 'ideal flush',
-        'ETF_formula':'SM21_cal*((1-C11*ESF_RF)*(1-C22*ELF_IF)-C12*C21*ESF_RF*ELF_IF)/C21',
+        'ETF_formula':('conj(SM21_cal)*((1-C11*ESF_RF)*(1-conj(C22)*conj(ELF_IF))-C12*C21*ESF_RF*conj(ELF_IF))/C21' if inverted else 'SM21_cal*((1-C11*ESF_RF)*(1-C22*ELF_IF)-C12*C21*ESF_RF*ELF_IF)/C21'),
         'limitations':['No isolation acquisition: transmission leakage is assumed zero.',
             'Receiver ratios / switch terms are not independently calibrated.',
             'MUT correction assumes unilateral or negligible reverse-coupling contribution.',

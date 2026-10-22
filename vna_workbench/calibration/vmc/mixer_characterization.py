@@ -5,7 +5,7 @@ import hashlib
 import numpy as np
 from vna_workbench.data.models import Dataset
 from vna_workbench.data.touchstone import load_file
-from vna_workbench.core.frequency_conversion import output_frequencies, frequency_relation
+from vna_workbench.core.frequency_conversion import output_frequencies, frequency_relation, is_inverting, phase_convention
 from vna_workbench.core.standard_sampling import sample_standard, SAMPLING_METHODS, INTERPOLATION_COORDINATES
 from vna_workbench.core.sol import solve_sol, mobius
 from vna_workbench.data.standard_definitions import load_standard
@@ -47,6 +47,7 @@ def characterize(measurement_paths, standard_paths, options=Options()):
         if data.count != len(freq) or np.any(np.diff(axis) <= 0) or not np.all(np.abs(axis-freq) <= options.frequency_tolerance_hz):
             raise ValueError(f'{role}: 六个测量的 RF 频率网格必须一致；测量数据不插值。')
     ifreq = output_frequencies(freq, options.lo_hz, options.frequency_conversion)
+    inverted = is_inverting(options.frequency_conversion)
     z0s = [float(d.metadata['参考阻抗'].split()[0]) for d in datasets] + [s.z0 for s in standards]
     if not np.allclose(z0s, z0s[0], rtol=1e-12, atol=0):
         raise ValueError('测量与标准定义的参考阻抗不一致；不自动重归一化。')
@@ -54,6 +55,8 @@ def characterize(measurement_paths, standard_paths, options=Options()):
     for n, std in enumerate(standards):
         g, count = sample_standard(std, freq if n < 3 else ifreq,
                                    options.standard_sampling, options.frequency_tolerance_hz)
+        if inverted and n >= 3:
+            g = g.conj()
         gs.append(g); counts.append(count)
     gamma = np.column_stack(gs)
     measured = np.column_stack([d.s['S11'] for d in datasets])
@@ -82,6 +85,9 @@ def characterize(measurement_paths, standard_paths, options=Options()):
     # Independent extraction path on port-corrected reflection data.
     direct, direct_cond, _ = solve_sol(corrected, gamma[:, 3:], options.max_condition)
     cross_error = np.max(np.abs(np.column_stack((c11, c22, product))-np.column_stack(direct)), axis=1)
+    effective_c22 = c22.copy()
+    if inverted:
+        c22 = c22.conj()  # Return the physical IF-port reflection.
     transfer = continuous_root(product, options.root_sign)
     warnings = ['反射 SOL 仅确定 S12×S21；S12=S21 基于互易假设，整体 ± 符号须单独确认。',
                 '传输相位由乘积连续解缠后开方；稀疏采样不能保证真实相位分支。',
@@ -92,12 +98,17 @@ def characterize(measurement_paths, standard_paths, options=Options()):
         warnings.append('部分传输乘积接近零，传输相位/分支不可靠。')
     terms = dict(zip(('D1', 'S1', 'R1', 'D2', 'S2', 'R2'), (*first, *second)))
     terms['S12_times_S21'] = product
+    terms['C22_input_equivalent'] = effective_c22
+    if inverted:
+        warnings.append('高边 LO：仅第二轮标准取共轭；S22 为物理 IF 反射，S21/S12 为输入参考等效传输，非绝对 LO 相位。')
     diagnostics = {'SOL1_condition': cond1, 'SOL2_condition': cond2,
                    'Direct_fit_condition': direct_cond, 'SOL1_residual': residual1,
                    'SOL2_residual': residual2, 'Two_path_complex_difference': cross_error}
-    manifest = {'algorithm': 'SOL Mobius composition / reciprocal converter', 'version': '1.7.0',
+    manifest = {'algorithm': 'SOL Mobius composition / reciprocal converter', 'version': '1.8.0',
                 'lo_hz': options.lo_hz, 'frequency_conversion': options.frequency_conversion,
-                'if_relation': frequency_relation(options.frequency_conversion)+' (non-inverting)',
+                'if_relation': frequency_relation(options.frequency_conversion),
+                'spectral_inversion': inverted, 'phase_convention': phase_convention(options.frequency_conversion),
+                'evaluated_standards': 'solver values; second round conjugated for high_side',
                 'second_round': options.second_round, 'standard_sampling': options.standard_sampling,
                 'interpolation_coordinates': INTERPOLATION_COORDINATES[options.standard_sampling],
                 'standard_kit': 'shared_open_short_load' if shared_kit else 'per_round_legacy',

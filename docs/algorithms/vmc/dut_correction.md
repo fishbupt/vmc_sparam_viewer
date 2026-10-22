@@ -36,3 +36,20 @@ vc21 = m['S21']*(1-c11*t['P1_RF_ESF'])*(1-c22*t['IF_ELF'])/t['VMC_ETF']
 ```
 
 这里 c11、c22 是已校准反射，m['S21'] 是未补偿原始传输。该公式采用单向／忽略反向耦合模型；S12 未校准，输出零仅为占位。
+
+
+## 3 高边 LO：输入参考的 VC21
+
+**函数：** `calibrate_mut()` 的 `inverted` 分支。物理 S11/S22 的反射校准不变。
+
+\[
+VC_{21}=\frac{(S_{M21})^*(1-S_{11}ESF_{RF})(1-S_{22}ELF_{IF})^*}{ETF}.
+\]
+
+```python
+sm21 = m['S21'].conj()
+load_factor = (1-c22*t['IF_ELF']).conj()
+vc21 = sm21*(1-c11*t['P1_RF_ESF'])*load_factor/t['VMC_ETF']
+```
+
+输出 VC21 为输入参考等效传输，零 LO 相位规范下的物理正向转换系数为 `conj(vc21)`。仍采用单向／忽略反向耦合模型。
