@@ -173,8 +173,9 @@ class SimulationDialog(QDialog):
     def options(self):
         values={name:box.value()*factor for name,(box,factor) in self.parameters.items()}
         for name in ('points','noise_seed','noise_averages'):values[name]=int(values[name])
-        if hasattr(self,'vmc_session'):values['z0']=self.vmc_session.values['z0']
-        return SimulationOptions(**values,standard_sampling=self.sampling.currentData(),noise_enabled=self.noise.isChecked(),frequency_conversion=self.conversion.currentData())
+        values.update(standard_sampling=self.sampling.currentData(),noise_enabled=self.noise.isChecked(),frequency_conversion=self.conversion.currentData())
+        if hasattr(self,'vmc_session'):values.update({k:v for k,v in self.vmc_session.values.items() if k!='raw_axis'})
+        return SimulationOptions(**values)
 
     def compute(self):
         if self.worker:return

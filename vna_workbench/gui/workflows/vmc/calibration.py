@@ -226,8 +226,10 @@ class VMCCalibrationDialog(QDialog):
 
     def options(self):
         v={k:s.value()*(1e9 if k.endswith('_hz') and k!='frequency_tolerance_hz' else 1) for k,s in self.spins.items()}
-        return CalibrationOptions(**v,points=self.points.value(),frequency_conversion=self.conversion.currentData(),
+        v.update(points=self.points.value(),frequency_conversion=self.conversion.currentData(),
             standard_sampling=self.sampling.currentData(),raw_axis=self.raw_axis.currentData(),mixer_definition_axis=self.definition_axis.currentData())
+        if hasattr(self,'vmc_session'):v.update(self.vmc_session.values)
+        return CalibrationOptions(**v)
 
     def inputs(self):
         f={k:e.text().strip() for k,e in self.fields.items()}

@@ -185,10 +185,12 @@ class VMCSimulationDialog(QDialog):
         v={k:spin.value()*factor for k,(spin,factor) in self.parameters.items()}
         for key in ('points','noise_seed','noise_averages'):v[key]=int(v[key])
         model=lambda name,cls:cls(**{k:s.value() for k,s in self.models[name].items()})
-        return VMCSimulationOptions(**v,synthetic_sol=self.synthetic_sol.isChecked(),frequency_conversion=self.conversion.currentData(),raw_axis=self.raw_axis.currentData(),
+        v.update(synthetic_sol=self.synthetic_sol.isChecked(),frequency_conversion=self.conversion.currentData(),raw_axis=self.raw_axis.currentData(),
             standard_sampling=self.sampling.currentData(),noise_enabled=self.noise.isChecked(),
             calibration_mixer=model('calibration_mixer',MixerModel),mut=model('mut',MixerModel),
             port1=model('port1',PortModel),port2=model('port2',PortModel) if self.separate_port2.isChecked() else None)
+        if hasattr(self,'vmc_session'):v.update(self.vmc_session.values)
+        return VMCSimulationOptions(**v)
 
     def remember(self):
         for k,(spin,_) in self.parameters.items():self.settings.setValue(k,spin.value())
@@ -209,6 +211,9 @@ class VMCSimulationDialog(QDialog):
         if not self.directory.text().strip() or (standard_paths is not None and not all(standard_paths)) or (self.import_thru.isChecked() and not thru) or (self.import_cal.isChecked() and not cal):
             QMessageBox.warning(self,'缺少输入','请选择输出目录，并填写启用导入的所有标准定义。');return
         o=self.options();self.remember();self.invalidate()
+        self.log.appendPlainText(f'VMC 实际生成配置：RF {o.rf_start_hz/1e9:g}～{o.rf_stop_hz/1e9:g} GHz；'
+            f'LO {o.lo_hz/1e9:g} GHz；{CONVERSION_MODES[o.frequency_conversion]}；'
+            f'{o.points} 点；原始横轴 {o.raw_axis.upper()}；表征文件横轴 {self.definition_axis.currentData().upper()}。')
         for c in self.controls:c.setEnabled(False)
         self.run_btn.setEnabled(False);self.progress.show();self.summary.setText('正在计算正向波量响应并生成文件…')
         self.worker=Worker(generate_vmc_files,(self.directory.text().strip(),o,standard_paths,thru,cal,self.definition_axis.currentData()),self)

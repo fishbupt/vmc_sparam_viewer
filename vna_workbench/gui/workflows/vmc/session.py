@@ -3,8 +3,8 @@ from dataclasses import asdict
 import json
 from PyQt6.QtCore import QObject
 from PyQt6.QtWidgets import QComboBox, QLabel
-from vna_workbench.calibration.vmc.models import CalibrationOptions
-from vna_workbench.core.frequency_conversion import output_frequencies, CONVERSION_MODES
+from vna_workbench.calibration.vmc.models import CalibrationOptions, AXIS_MODES
+from vna_workbench.core.frequency_conversion import output_frequencies, CONVERSION_MODES, bands_overlap
 from vna_workbench.core.standard_sampling import SAMPLING_METHODS
 
 KEYS=('rf_start_hz','rf_stop_hz','points','lo_hz','frequency_conversion','z0',
@@ -17,14 +17,17 @@ class VMCSession(QObject):
         self.workspace=workspace
         self.values={k:v for k,v in asdict(CalibrationOptions()).items() if k in KEYS}
         self.bindings=[];self.applying=False;self.restored=False
+        self.axis_notice=''
         try:
             saved=json.loads(workspace.owner.settings.value('vmc_global/config','{}'))
             if isinstance(saved,dict) and saved:
                 candidate={**self.values,**{k:v for k,v in saved.items() if k in KEYS}}
+                candidate=self.compatible_axis(candidate)
                 # Invalid old settings must not poison all pages at startup.
                 from vna_workbench.calibration.vmc.input_reader import validate_axes
                 validate_axes(CalibrationOptions(**candidate))
                 self.values=candidate;self.restored=True
+                workspace.owner.settings.setValue('vmc_global/config',json.dumps(self.values))
         except (TypeError,ValueError,KeyError,OverflowError):pass
 
     def attach(self,page,fields,editor=False):
@@ -48,14 +51,35 @@ class VMCSession(QObject):
         patch={k:v for k,v in values.items() if k in KEYS}
         if self.workspace.owner.busy() and not force:
             self.apply_all();return False
-        changed=any(self.values[k]!=v for k,v in patch.items())
-        if not changed:return True
-        self.values.update(patch)
+        candidate=self.compatible_axis({**self.values,**patch})
+        changed=candidate!=self.values
+        if not changed:
+            self.apply_all()  # Restore a rejected dual selection in every bound selector.
+            return True
+        self.values=candidate
         self.apply_all()
         for page,_,_,_ in self.bindings:
             (page.invalidate_cal if hasattr(page,'invalidate_cal') else page.invalidate)()
         self.workspace.owner.settings.setValue('vmc_global/config',json.dumps(self.values))
         return True
+
+    def compatible_axis(self,values):
+        """Keep one usable global encoding when physical bands touch or overlap.
+
+        This selects RF-indexed files; the core dual encoding stays strict.
+        Incomplete intermediate frequency edits remain visible for correction.
+        """
+        values=dict(values)
+        try:
+            rf=[values['rf_start_hz'],values['rf_stop_hz']]
+            iff=output_frequencies(rf,values['lo_hz'],values['frequency_conversion'])
+            overlap=bands_overlap(rf,iff)
+            if not overlap or values['raw_axis']=='if':self.axis_notice=''
+            if values['raw_axis']=='dual' and overlap:
+                values['raw_axis']='rf'
+                self.axis_notice='RF/IF 频段相接或重叠，已统一改用 RF 横轴生成原始文件。'
+        except (ValueError,TypeError):pass
+        return values
 
     def apply(self,page,fields,summary):
         self.applying=True
@@ -65,6 +89,14 @@ class VMCSession(QObject):
                 if isinstance(control,QComboBox):control.setCurrentIndex(control.findData(self.values[key]))
                 else:control.setValue(int(self.values[key]) if key=='points' else self.values[key]/factor)
                 control.blockSignals(old)
+                if key=='raw_axis':
+                    try:
+                        v=self.values
+                        rf=[v['rf_start_hz'],v['rf_stop_hz']]
+                        iff=output_frequencies(rf,v['lo_hz'],v['frequency_conversion'])
+                        item=control.model().item(control.findData('dual'))
+                        if item is not None:item.setEnabled(not bands_overlap(rf,iff))
+                    except (ValueError,TypeError):pass
             summary.setText(self.description())
             if hasattr(page,'update_mapping'):page.update_mapping()
         finally:self.applying=False
@@ -80,8 +112,10 @@ class VMCSession(QObject):
         except ValueError as e:output=str(e)
         return (f"全局 VMC：RF {v['rf_start_hz']/1e9:g}～{v['rf_stop_hz']/1e9:g} GHz · "
                 f"LO {v['lo_hz']/1e9:g} GHz · {output} · {v['points']} 点 · {v['z0']:g} Ω\n"
+                f"原始文件横轴：{AXIS_MODES[v['raw_axis']]}\n"
                 f"{CONVERSION_MODES[v['frequency_conversion']]} · {SAMPLING_METHODS[v['standard_sampling']]} · "
-                '在“VMC 全局配置”统一修改；两轮 SOL 测量文件固定 RF 横轴。')
+                '在“VMC 全局配置”统一修改；两轮 SOL 测量文件固定 RF 横轴。'
+                + ('\n'+self.axis_notice if self.axis_notice else ''))
 
 
 def generator_fields(page,full=False):
