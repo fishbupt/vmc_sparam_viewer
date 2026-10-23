@@ -19,6 +19,7 @@ from vna_workbench.simulation.vmc import VMCSimulationOptions, MixerModel, PortM
 
 class VMCSimulationDialog(QDialog):
     generated=pyqtSignal(object)
+    invalidated=pyqtSignal()
 
     def __init__(self,parent=None,embedded=False):
         super().__init__(parent)
@@ -37,7 +38,7 @@ class VMCSimulationDialog(QDialog):
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setMinimumWidth(450)
         panel=QWidget();left=QVBoxLayout(panel);scroll.setWidget(panel);split.addWidget(scroll)
         defaults=VMCSimulationOptions()
-        group=QGroupBox('VMC 配置');form=QFormLayout(group);left.addWidget(group)
+        group=QGroupBox('VMC 配置');self.sweep_group=group;form=QFormLayout(group);left.addWidget(group)
         for key,label,factor,low,high in [('rf_start_hz','RF 起点 (GHz)',1e9,.000001,1000),
             ('rf_stop_hz','RF 终点 (GHz)',1e9,.000001,1000),('lo_hz','固定 LO (GHz)',1e9,.000001,1000),
             ('z0','参考阻抗 (Ω)',1,.001,10000),('frequency_tolerance_hz','频点容差 (Hz)',1,0,1e6)]:
@@ -52,6 +53,8 @@ class VMCSimulationDialog(QDialog):
         group=QGroupBox('标准件定义：OPEN / SHORT / LOAD / THRU');form=QFormLayout(group);left.addWidget(group)
         self.import_sol=self.check('import_sol','导入三个实际 SOL S1P；否则理想 +1 / −1 / 0');form.addRow(self.import_sol)
         self.synthetic_sol=self.check('synthetic_sol','使用内置非理想 SOL（仅算法验证，优先于导入）');form.addRow(self.synthetic_sol)
+        self.separate_kit=self.check('separate_kit','Port2 使用独立 OPEN / SHORT / LOAD');form.addRow(self.separate_kit)
+        for k in ('p2_open','p2_short','p2_load'):self.file_row(form,k,'Port2 '+k[3:].upper()+' S1P','S1P (*.s1p *.S1P)')
         for k in ('open','short','load'):self.file_row(form,k,k.upper()+' S1P','S1P (*.s1p *.S1P)')
         self.import_thru=self.check('import_thru','导入 THRU S2P；否则零延迟 / 零损耗 Flush');form.addRow(self.import_thru)
         self.file_row(form,'thru','THRU S2P','S2P (*.s2p *.S2P)')
@@ -101,11 +104,15 @@ class VMCSimulationDialog(QDialog):
         self.calibrate_btn=QPushButton('将本轮文件载入 VMC 校准窗口');self.calibrate_btn.clicked.connect(self.open_calibration);self.calibrate_btn.setEnabled(False);actions.addWidget(self.calibrate_btn)
         self.progress=QProgressBar();self.progress.setRange(0,0);self.progress.hide();actions.addWidget(self.progress)
         close=QPushButton('关闭');close.clicked.connect(self.reject);actions.addWidget(close)
-        if embedded:close.hide();self.setMinimumSize(0,0)
-        for c in (self.import_sol,self.synthetic_sol,self.import_thru,self.import_cal,self.noise,self.separate_port2):c.toggled.connect(self.update_controls)
+        if embedded:close.hide();self.setMinimumSize(0,0);self.sweep_group.hide()
+        for c in (self.import_sol,self.synthetic_sol,self.separate_kit,self.import_thru,self.import_cal,self.noise,self.separate_port2):c.toggled.connect(self.update_controls)
         self.update_mapping();self.update_controls()
 
     def high_side_preset(self):
+        if hasattr(self,'vmc_session'):
+            self.vmc_session.update(dict(rf_start_hz=10e9,rf_stop_hz=15e9,lo_hz=20e9,points=201,frequency_conversion='high_side',raw_axis='rf'))
+            self.import_sol.setChecked(False);self.synthetic_sol.setChecked(True)
+            self.import_thru.setChecked(False);self.import_cal.setChecked(False);self.noise.setChecked(False);return
         for name,value in [('rf_start_hz',10),('rf_stop_hz',15),('lo_hz',20),('points',201)]:
             self.parameters[name][0].setValue(value)
         self.conversion.setCurrentIndex(self.conversion.findData('high_side'))
@@ -148,6 +155,7 @@ class VMCSimulationDialog(QDialog):
 
     def invalidate(self,*args):
         self.result=None
+        self.invalidated.emit()
         if hasattr(self,'calibrate_btn'):
             self.calibrate_btn.setEnabled(False);self.summary.setText('配置已改变，请重新生成；已保存文件保留。')
             self.figure.clear();self.canvas.draw_idle()
@@ -164,6 +172,9 @@ class VMCSimulationDialog(QDialog):
         if self.worker:return
         for k,active in [('open',(self.import_sol.isChecked() and not self.synthetic_sol.isChecked())),('short',(self.import_sol.isChecked() and not self.synthetic_sol.isChecked())),('load',(self.import_sol.isChecked() and not self.synthetic_sol.isChecked())),
                          ('thru',self.import_thru.isChecked()),('calibration_mixer',self.import_cal.isChecked())]:
+            self.file_fields[k].setEnabled(active);self.file_buttons[k].setEnabled(active)
+        for k in ('p2_open','p2_short','p2_load'):
+            active=self.import_sol.isChecked() and not self.synthetic_sol.isChecked() and self.separate_kit.isChecked()
             self.file_fields[k].setEnabled(active);self.file_buttons[k].setEnabled(active)
         self.definition_axis.setEnabled(self.import_cal.isChecked())
         for spin in self.models['calibration_mixer'].values():spin.setEnabled(not self.import_cal.isChecked())
@@ -185,12 +196,14 @@ class VMCSimulationDialog(QDialog):
             for k,s in model.items():self.settings.setValue('model/'+name+'/'+k,s.value())
         for k,e in self.file_fields.items():self.settings.setValue('path/'+k,e.text())
         for k,c in [('frequency_conversion',self.conversion),('raw_axis',self.raw_axis),('standard_sampling',self.sampling),('mixer_definition_axis',self.definition_axis)]:self.settings.setValue(k,c.currentData())
-        for k,c in [('synthetic_sol',self.synthetic_sol),('import_sol',self.import_sol),('import_thru',self.import_thru),('import_cal',self.import_cal),('separate_port2',self.separate_port2),('noise_enabled',self.noise)]:self.settings.setValue(k,c.isChecked())
+        for k,c in [('separate_kit',self.separate_kit),('synthetic_sol',self.synthetic_sol),('import_sol',self.import_sol),('import_thru',self.import_thru),('import_cal',self.import_cal),('separate_port2',self.separate_port2),('noise_enabled',self.noise)]:self.settings.setValue(k,c.isChecked())
         self.settings.setValue('output_parent',self.directory.text())
 
     def compute(self):
         if self.worker:return
         standard_paths=[self.file_fields[k].text().strip() for k in ('open','short','load')] if (self.import_sol.isChecked() and not self.synthetic_sol.isChecked()) else None
+        if standard_paths is not None and self.separate_kit.isChecked():
+            standard_paths += [self.file_fields[k].text().strip() for k in ('p2_open','p2_short','p2_load')]
         thru=self.file_fields['thru'].text().strip() if self.import_thru.isChecked() else None
         cal=self.file_fields['calibration_mixer'].text().strip() if self.import_cal.isChecked() else None
         if not self.directory.text().strip() or (standard_paths is not None and not all(standard_paths)) or (self.import_thru.isChecked() and not thru) or (self.import_cal.isChecked() and not cal):

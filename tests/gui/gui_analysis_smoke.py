@@ -67,7 +67,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert result.left_axis == 'OutputFreq' and len(result.i) == 3
     np.testing.assert_allclose(result.delta['S21']['幅度差 (dB)'], -20*np.log10(2))
     c.metric.setCurrentText('幅度差 (dB)')
-    w.workspace.show_page(6)
+    w.workspace.show_page(7)
     assert w.workspace.comparison is c and c.result is result
     w.analysis_tabs.setCurrentIndex(0)
     assert w.dataset is a and w.mode.currentText() == '相位 (°)'

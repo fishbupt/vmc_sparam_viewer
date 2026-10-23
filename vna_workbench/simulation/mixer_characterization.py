@@ -51,6 +51,7 @@ class SimulationOptions:
     noise_seed: int = 20261009
     noise_averages: int = 1
     frequency_conversion: str = 'down'
+    z0: float | None = None  # None keeps legacy API inference from imported standards.
 
 @dataclass
 class Simulation:
@@ -74,7 +75,7 @@ class SavedSimulation:
 
 def _validate(o):
     for f in fields(o):
-        if f.name not in ('standard_sampling', 'noise_enabled', 'frequency_conversion'):
+        if f.name not in ('standard_sampling', 'noise_enabled', 'frequency_conversion') and getattr(o,f.name) is not None:
             value = getattr(o, f.name)
             if not np.isfinite(value):
                 raise ValueError(f'{f.name}: 参数必须是有限数。')
@@ -103,15 +104,15 @@ def _validate(o):
 
 def simulate(standard_paths, options=SimulationOptions()):
     _validate(options)
-    if standard_paths is not None and len(standard_paths) != 3:
-        raise ValueError('请选择共用 OPEN、SHORT、LOAD 三个 S1P。')
+    if standard_paths is not None and len(standard_paths) not in (3, 6):
+        raise ValueError('请选择共用三个或端口独立六个 OPEN、SHORT、LOAD S1P。')
     # Read each file once: copied bytes, hashes and evaluated values share one snapshot.
     from vna_workbench.data.standard_definitions import parse_s1p
     if standard_paths is None:
         from vna_workbench.simulation.verification_kit import verification_blobs
         rf = np.linspace(options.rf_start_hz, options.rf_stop_hz, int(options.points))
         iff = output_frequencies(rf, options.lo_hz, options.frequency_conversion)
-        blobs = verification_blobs(np.r_[rf, iff])
+        blobs = verification_blobs(np.r_[rf, iff],options.z0 or 50)
         standard_paths = ['builtin:verification_open', 'builtin:verification_short', 'builtin:verification_load']
     else:
         blobs = [Path(p).read_bytes() for p in standard_paths]
@@ -125,7 +126,10 @@ def simulate(standard_paths, options=SimulationOptions()):
         else:
             raise ValueError(f'{p}: 无法解码标准文件。')
         standards.append(parse_s1p(text, str(p)))
+    shared_kit=len(standards)==3
     z0 = standards[0].z0
+    if options.z0 is not None and not np.isclose(z0,options.z0,rtol=1e-12,atol=0):
+        raise ValueError('标准定义参考阻抗与 VMC 全局配置不一致，不自动重归一化。')
     if not np.allclose([s.z0 for s in standards], z0, rtol=1e-12, atol=0):
         raise ValueError('三个标准件参考阻抗必须一致，不自动重归一化。')
     f = np.linspace(options.rf_start_hz, options.rf_stop_hz, int(options.points))
@@ -145,8 +149,8 @@ def simulate(standard_paths, options=SimulationOptions()):
     s=response(o.esf_db,o.esf_phase_deg,o.esf_delay_ps)
     r=response(o.erf_db,o.erf_phase_deg,o.erf_delay_ps)
     gamma=[];counts=[]
-    for axis in (f, ifreq):
-        for std in standards:
+    for round_index,axis in enumerate((f, ifreq)):
+        for std in (standards if shared_kit else standards[round_index*3:round_index*3+3]):
             g,n=sample_standard(std,axis,o.standard_sampling,o.frequency_tolerance_hz)
             gamma.append(g);counts.append(n)
     gamma=np.column_stack(gamma)
@@ -188,6 +192,7 @@ def simulate(standard_paths, options=SimulationOptions()):
         'phase_reference':'Phases at first paired point; S22 uses physical IF slope for high_side, other mixer coefficients use RF slope',
         'model':('Independent conjugate-wave solve; input reflection=C11+S12*S21*conj(Gamma)/(1-conj(S22)*conj(Gamma))' if inverted else 'm=D+R*Gamma/(1-S*Gamma); output reflection=C11+C12*C21*Gamma/(1-C22*Gamma)'),
         'truth_reference_root_sign':1 if abs(np.sqrt(t[0]*t[0])-t[0]) <= abs(np.sqrt(t[0]*t[0])+t[0]) else -1,
+        'standard_kit':'shared_open_short_load' if shared_kit else 'independent_port_kits',
         'reciprocal_assumption':True,'measurement_columns':'Only S11 is meaningful; S21/S12/S22 are zero placeholders',
         'mixer_truth_noise_free':True,'standard_sampling':o.standard_sampling,
         'interpolation_coordinates':INTERPOLATION_COORDINATES[o.standard_sampling],
@@ -199,7 +204,7 @@ def simulate(standard_paths, options=SimulationOptions()):
             'seed':int(o.noise_seed),'generator':'NumPy PCG64','numpy_version':np.__version__,
             'averaging':'Gaussian-equivalent complex averaging: RMS scales as 1/sqrt(N)'},
         'standard_inputs':[{'kind':k,'source_path':str(p),'sha256':hashlib.sha256(b).hexdigest()}
-            for k,p,b in zip(('OPEN','SHORT','LOAD'),standard_paths,blobs)],
+            for k,p,b in zip(('OPEN','SHORT','LOAD') if shared_kit else ('P1_OPEN','P1_SHORT','P1_LOAD','P2_OPEN','P2_SHORT','P2_LOAD'),standard_paths,blobs)],
         'max_effective_singular_value':max_sv,
         'warnings':['Mixer.s2p uses RF stimulus axis and frequency-translating effective coefficients; ordinary S2P does not itself implement frequency conversion.']}
     if max_sv>1+1e-10:
@@ -232,8 +237,10 @@ def generate_files(standard_paths, output_parent, options=SimulationOptions()):
         text=s2p_text(f,result.truth.s,z0,['SYNTHETIC MIXER TRUTH: reciprocal, noise-free; RF stimulus axis.',
                     'Effective frequency-translating coefficients; not a frequency-converting DummyDUT S2P.']+common[:3])
         (stage/'Mixer.s2p').write_text(text,encoding='utf-8');result.truth.raw_text=text
-        for kind,blob in zip(('Open','Short','Load'),result.standard_bytes):
-            (stage/f'Standard_{kind}.s1p').write_bytes(blob)
+        names=([f'Standard_{k}.s1p' for k in ('Open','Short','Load')] if len(result.standard_bytes)==3 else
+               [f'Standard_P{port}_{k}.s1p' for port in (1,2) for k in ('Open','Short','Load')])
+        for name,blob in zip(names,result.standard_bytes):
+            (stage/name).write_bytes(blob)
         # Full clean observations, applied noise, evaluated Gamma and error terms.
         stream=io.StringIO();writer=csv.writer(stream)
         labels=['RF_Hz','IF_Hz']
@@ -251,4 +258,4 @@ def generate_files(standard_paths, output_parent, options=SimulationOptions()):
     except Exception:
         shutil.rmtree(stage,ignore_errors=True);raise
     return SavedSimulation(folder,[folder/n for n in MEASUREMENT_NAMES],
-        [folder/f'Standard_{k}.s1p' for k in ('Open','Short','Load')],folder/'Mixer.s2p',result)
+        [folder/name for name in names],folder/'Mixer.s2p',result)

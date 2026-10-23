@@ -19,21 +19,24 @@ from vna_workbench.core.frequency_conversion import CONVERSION_MODES
 
 class SimulationDialog(QDialog):
     generated=pyqtSignal(object)
-    def __init__(self,parent=None):
+    invalidated=pyqtSignal()
+    def __init__(self,parent=None,embedded=False):
         super().__init__(parent)
-        self.setWindowTitle('生成 SOL 仿真文件与 Mixer 真值 · v1.5')
+        self.embedded=embedded;self.workbench_owner=parent if embedded else None
+        if embedded:self.setWindowFlags(Qt.WindowType.Widget)
+        self.setWindowTitle('生成两轮 SOL 与 Mixer 真值')
         self.resize(1380,900)
         self.settings=QSettings('VNAAlgorithmTools','MixerSimulation')
         self.kit_settings=QSettings('VNAAlgorithmTools','MixerCharacterization')
         self.worker=None;self.result=None;self.controls=[];self.parameters={}
         layout=QVBoxLayout(self)
-        intro=QLabel('基于共用 OPEN / SHORT / LOAD 定义生成六个原始测量 S2P 和无噪声 Mixer.s2p。\n'
+        intro=QLabel('基于共用或端口独立 OPEN / SHORT / LOAD 定义生成六个原始测量 S2P 和无噪声 Mixer.s2p。\n'
             '支持 RF−LO、RF+LO 和高边 LO−RF；六个测量文件仅 S11 有效。高边 LO 的 S22 时延按 IF 计算，传输为输入参考等效系数。')
         intro.setWordWrap(True);layout.addWidget(intro)
         splitter=QSplitter(Qt.Orientation.Horizontal);layout.addWidget(splitter,1)
         scroll=QScrollArea();scroll.setWidgetResizable(True);scroll.setMinimumWidth(580)
         panel=QWidget();left=QVBoxLayout(panel);scroll.setWidget(panel);splitter.addWidget(scroll)
-        kit=QGroupBox('共用校准套（实际标准定义 S1P）');grid=QGridLayout(kit);left.addWidget(kit)
+        kit=QGroupBox('端口 1 / 第一轮标准定义（S1P）');grid=QGridLayout(kit);left.addWidget(kit)
         self.standards=[]
         for i,kind in enumerate(('OPEN','SHORT','LOAD')):
             field=QLineEdit(str(self.settings.value('kit/'+kind.lower(),self.kit_settings.value('kit/'+kind.lower(),''))))
@@ -43,12 +46,27 @@ class SimulationDialog(QDialog):
             self.standards.append(field);self.controls.extend((field,btn))
         reuse=QPushButton('复用表征窗口最近使用的三个标准件');reuse.clicked.connect(self.reuse_kit)
         grid.addWidget(reuse,3,0,1,3);self.controls.append(reuse)
-        self.synthetic_kit=QCheckBox('使用内置非理想 SOL（测试用，忽略上方导入文件）')
+        self.synthetic_kit=QCheckBox('使用内置共用非理想 SOL（测试用，忽略两端口文件）')
         self.synthetic_kit.setChecked(self.settings.value('synthetic_kit',False,type=bool))
         self.synthetic_kit.toggled.connect(self.invalidate)
         grid.addWidget(self.synthetic_kit,4,0,1,3);self.controls.append(self.synthetic_kit)
+        self.separate_kit=QCheckBox('端口 2 / 第二轮使用独立 OPEN、SHORT、LOAD')
+        self.separate_kit.setChecked(self.settings.value('separate_kit',False,type=bool))
+        self.separate_kit.toggled.connect(self.invalidate);left.addWidget(self.separate_kit);self.controls.append(self.separate_kit)
+        kit2=QGroupBox('端口 2 / 第二轮标准定义（按 IF 求值）');grid2=QGridLayout(kit2);left.addWidget(kit2)
+        self.standards2=[]
+        for i,kind in enumerate(('OPEN','SHORT','LOAD')):
+            field=QLineEdit(str(self.settings.value('kit2/'+kind.lower(),'')))
+            field.textChanged.connect(self.invalidate)
+            btn=QPushButton('浏览…');btn.clicked.connect(lambda checked=False,e=field:self.browse_standard(e))
+            grid2.addWidget(QLabel(kind),i,0);grid2.addWidget(field,i,1);grid2.addWidget(btn,i,2)
+            self.standards2.append(field);self.controls.extend((field,btn))
+        self.separate_kit.toggled.connect(kit2.setVisible);kit2.setVisible(self.separate_kit.isChecked())
+        self.synthetic_kit.toggled.connect(lambda checked:self.separate_kit.setEnabled(not checked))
+        self.synthetic_kit.toggled.connect(lambda checked:kit2.setEnabled(not checked))
+        self.separate_kit.setEnabled(not self.synthetic_kit.isChecked());kit2.setEnabled(not self.synthetic_kit.isChecked())
         defaults=SimulationOptions()
-        sweep=QGroupBox('扫频与标准求值');form=QFormLayout(sweep);left.addWidget(sweep)
+        sweep=QGroupBox('扫频与标准求值');self.sweep_group=sweep;form=QFormLayout(sweep);left.addWidget(sweep)
         for name,label,factor,low,high,dec in [
             ('rf_start_hz','RF 起点 (GHz)',1e9,.000001,1000,9),
             ('rf_stop_hz','RF 终点 (GHz)',1e9,.000001,1000,9),
@@ -95,7 +113,7 @@ class SimulationDialog(QDialog):
         self.directory=QLineEdit(str(self.settings.value('output_parent','')));self.directory.textChanged.connect(self.invalidate)
         btn=QPushButton('选择目录…');btn.clicked.connect(self.browse_output)
         row=QHBoxLayout();row.addWidget(self.directory);row.addWidget(btn);form.addRow(row);self.controls.extend((self.directory,btn))
-        note=QLabel('每次在所选目录创建独立 vmc_sim_… 子目录，保留七个 S2P、三个标准副本及真值/噪声记录。')
+        note=QLabel('每次在所选目录创建独立 vmc_sim_… 子目录，保留七个 S2P、三个或六个标准副本及真值/噪声记录。')
         note.setWordWrap(True);form.addRow(note);left.addStretch()
         right=QWidget();right_layout=QVBoxLayout(right);splitter.addWidget(right);splitter.setStretchFactor(1,1)
         self.figure=Figure(figsize=(8,6),layout='constrained');self.canvas=FigureCanvasQTAgg(self.figure)
@@ -109,8 +127,12 @@ class SimulationDialog(QDialog):
         close=QPushButton('关闭');close.clicked.connect(self.reject)
         for widget in (self.run_btn,self.characterize_btn,self.progress,close):actions.addWidget(widget)
         self.update_noise_controls()
+        if embedded:close.hide();self.sweep_group.hide()
 
     def high_side_preset(self):
+        if hasattr(self,'vmc_session'):
+            self.vmc_session.update(dict(rf_start_hz=10e9,rf_stop_hz=15e9,lo_hz=20e9,points=201,frequency_conversion='high_side',raw_axis='rf'))
+            self.synthetic_kit.setChecked(True);self.noise.setChecked(False);return
         for name,value in [('rf_start_hz',10),('rf_stop_hz',15),('lo_hz',20),('points',201)]:
             self.parameters[name][0].setValue(value)
         self.conversion.setCurrentIndex(self.conversion.findData('high_side'))
@@ -126,6 +148,7 @@ class SimulationDialog(QDialog):
 
     def invalidate(self,*args):
         self.result=None
+        self.invalidated.emit()
         if hasattr(self,'characterize_btn'):
             self.characterize_btn.setEnabled(False)
             self.summary.setText('配置已改变，请重新生成；已保存的文件保留。')
@@ -150,18 +173,23 @@ class SimulationDialog(QDialog):
     def options(self):
         values={name:box.value()*factor for name,(box,factor) in self.parameters.items()}
         for name in ('points','noise_seed','noise_averages'):values[name]=int(values[name])
+        if hasattr(self,'vmc_session'):values['z0']=self.vmc_session.values['z0']
         return SimulationOptions(**values,standard_sampling=self.sampling.currentData(),noise_enabled=self.noise.isChecked(),frequency_conversion=self.conversion.currentData())
 
     def compute(self):
         if self.worker:return
-        paths=[e.text().strip() for e in self.standards];parent=self.directory.text().strip()
+        paths=[e.text().strip() for e in self.standards]
+        if self.separate_kit.isChecked() and not self.synthetic_kit.isChecked():paths += [e.text().strip() for e in self.standards2]
+        parent=self.directory.text().strip()
         if (not self.synthetic_kit.isChecked() and not all(paths)) or not parent:
-            QMessageBox.warning(self,'缺少输入','请选择 OPEN、SHORT、LOAD 三个 S1P 和输出目录。');return
+            QMessageBox.warning(self,'缺少输入','请完整选择各端口 OPEN、SHORT、LOAD S1P 和输出目录。');return
         self.invalidate();opts=self.options()
         for name,(box,factor) in self.parameters.items():self.settings.setValue(name,box.value())
         self.settings.setValue('standard_sampling',opts.standard_sampling);self.settings.setValue('noise_enabled',opts.noise_enabled)
         self.settings.setValue('frequency_conversion',opts.frequency_conversion)
         self.settings.setValue('synthetic_kit',self.synthetic_kit.isChecked())
+        self.settings.setValue('separate_kit',self.separate_kit.isChecked())
+        for kind,e in zip(('open','short','load'),self.standards2):self.settings.setValue('kit2/'+kind,e.text())
         self.settings.setValue('output_parent',parent)
         for kind,path in zip(('open','short','load'),paths):self.settings.setValue('kit/'+kind,path)
         for c in self.controls:c.setEnabled(False)
@@ -204,8 +232,10 @@ class SimulationDialog(QDialog):
 
     def open_characterization(self):
         if self.result is None or self.worker:return
+        if self.embedded:
+            self.workbench_owner.workspace.use_sol_files(self.result);return
         result=self.result;dialog=CharacterizeDialog(self)
-        for field,path in zip(dialog.measurements,result.measurement_paths):field.setText(str(path))
+        dialog.set_generated_files(result)
         for field,path in zip(dialog.standards,result.standard_paths):field.setText(str(path))
         dialog.lo.setValue(result.simulation.manifest['options']['lo_hz']/1e9)
         dialog.conversion.setCurrentIndex(dialog.conversion.findData(result.simulation.manifest['frequency_conversion']))
@@ -218,6 +248,7 @@ class SimulationDialog(QDialog):
         dialog.exec()
 
     def reject(self):
+        if self.embedded:return
         if not self.worker:super().reject()
     def closeEvent(self,event):
         if self.worker:event.ignore()

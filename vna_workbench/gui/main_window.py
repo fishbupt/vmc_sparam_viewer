@@ -183,26 +183,16 @@ class Window(SParameterViewerController, QMainWindow):
     def calibrate_vmc(self):
         if not self.choose_calibration_type('vmc'):
             return
-        self.workspace.show_page(4)
+        self.workspace.show_page(5)
 
     def simulate_vmc(self):
         self.workspace.show_simulation()
 
     def simulate_sol(self):
-        if self.busy():
-            return
-        from vna_workbench.gui.workflows.vmc.characterization_simulation import SimulationDialog
-        dialog = SimulationDialog(self)
-        dialog.generated.connect(self.add_dataset)
-        dialog.exec()
+        if not self.busy():self.workspace.show_sol()
 
     def characterize_mixer(self):
-        if self.busy():
-            return
-        from vna_workbench.gui.workflows.vmc.mixer_characterization import CharacterizeDialog
-        dialog = CharacterizeDialog(self)
-        dialog.generated.connect(self.add_dataset)
-        dialog.exec()
+        if not self.busy():self.workspace.show_characterization()
 
     def busy(self):
         return self.task is not None or (hasattr(self, "workspace") and self.workspace.busy())

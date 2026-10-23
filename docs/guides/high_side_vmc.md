@@ -1,10 +1,10 @@
 # 高边 LO 验证流程
 
-工作台 1.10.0，算法 / 报告 1.8.0。新增模式 `high_side`，IF=LO−RF，要求全部 RF<LO。原 up/down 含义不变。
+工作台 1.11.0，算法 / 报告 1.8.0。全局共享和五步操作见 [共享 VMC 流程](vmc_shared_workflow.md)。新增模式 `high_side`，IF=LO−RF，要求全部 RF<LO。原 up/down 含义不变。
 
 ## 第一步：验证校准混频器表征
 
-1. 打开“生成 SOL 仿真文件与 Mixer 真值”，点击“高边 LO 验证预设”。
+1. 在“VMC 全局配置”点击“高边 LO 预设”，进入“1. 生成两轮 SOL”；测试时可勾选内置非理想 SOL。
 2. 预设为 RF 10～15 GHz、LO 20 GHz、201 点、无噪声；IF 按点序为 10～5 GHz。预设保留已设置的混频器和误差盒参数。
 3. 默认使用内置非理想 SOL：OPEN 幅度 0.98、反射延迟 18 ps；SHORT 幅度 0.96、初相位 180°、反射延迟 28 ps；LOAD 幅度 0.04、初相位 0.5 rad、反射延迟 12 ps。均按实际物理频率计算。这是合成验证套，不是 Keysight 的物理校准套。
 4. 选择输出目录并生成。产出六个 SOL 原始测量 S2P、Mixer.s2p 真值、三个标准定义、CSV 和报告。
@@ -15,7 +15,7 @@
 
 ## 第二步：验证 VMC 误差项和校准 MUT
 
-1. 打开“生成 VMC 原始测量 SNP”，点击同名高边 LO 验证预设。
+1. 保持同一份全局配置，进入“3. 生成 VMC 原始测量 SNP”，可先从步骤 2 将已表征结果送入。
 2. 预设选择 RF 横轴、内置非理想 SOL、Flush Thru、模型校准混频器、无噪声，保留模型参数。
 3. 可勾选导入已表征校准混频器，并选择上一步的 Mixer.s2p（RF 横轴）；这样两阶段使用同一个混频器。
 4. 生成 open_raw.s2p、short_raw.s2p、load_raw.s2p、thru_raw.s2p、cal_mixer_raw.s2p、mut_raw.s2p，以及标准定义、calibration_mixer.s2p、mut_truth.s2p 和报告。

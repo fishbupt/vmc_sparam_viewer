@@ -20,8 +20,8 @@ with tempfile.TemporaryDirectory() as tmp:
     main.QSettings=lambda *args:QSettings(str(Path(tmp)/'main.ini'),QSettings.Format.IniFormat)
     errors=[];QMessageBox.warning=lambda *args:errors.append(args[2])
     window=main.Window();dialog=VMCSimulationDialog(window);dialog.generated.connect(window.add_dataset)
-    window.workspace.show_page(3)
-    assert any(b.text()=='生成 VMC 原始测量 SNP' for b in window.findChildren(QPushButton))
+    window.workspace.show_page(4)
+    assert window.workspace.simulation is not None
     assert dialog.sampling.count()==2 and dialog.conversion.currentData()=='up'
     assert dialog.parameters['lo_hz'][0].value()==20 and '30～40' in dialog.mapping.text()
     assert not dialog.file_fields['open'].isEnabled() and not dialog.models['port2']['edf_db'].isEnabled()

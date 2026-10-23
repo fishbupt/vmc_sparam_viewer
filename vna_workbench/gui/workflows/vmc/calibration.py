@@ -40,7 +40,7 @@ class VMCCalibrationDialog(QDialog):
         self.config_scroll=QScrollArea();self.config_scroll.setWidgetResizable(True);self.config_scroll.setMinimumWidth(320)
         self.config_panel=QWidget();self.config_panel.setObjectName('vmcConfig');config_layout=QVBoxLayout(self.config_panel)
         self.config_scroll.setWidget(self.config_panel);self.splitter.addWidget(self.config_scroll)
-        group=QGroupBox('VMC 配置');form=QFormLayout(group);config_layout.addWidget(group)
+        group=QGroupBox('VMC 全局配置');self.global_group=group;form=QFormLayout(group);config_layout.addWidget(group)
         self.spins={}
         for key,label,default,lo,hi in [
                 ('rf_start_hz','RF 起点 (GHz)',10,.000000001,1000),
@@ -141,7 +141,7 @@ class VMCCalibrationDialog(QDialog):
             project_info=QLabel('当前算法：VMC（单向 MUT 模型）\n\n'
                 '左侧配置 RF / 固定 LO / 派生 IF、阻抗、采样和频率轴。\n'
                 '这些配置、标准件路径和当前校准包由各工作流程页面共享。\n\n'
-                '标准件定义 → 原始测量 → 校准求解 → 校准 MUT。\n'
+                '生成两轮 SOL → 表征校准混频器 → 生成 VMC 原始测量 SNP → 校准求解 → 校准 MUT。\n'
                 '现有参数通过 QSettings 记录；校准包可保存为 ZIP。\n\n'
                 'SOLT / TRL / 多端口等通用算法与项目文件保存仍见 ToDo.md，未在本版实现。')
             project_info.setWordWrap(True);project_layout.addWidget(project_info);project_layout.addStretch()
@@ -150,6 +150,7 @@ class VMCCalibrationDialog(QDialog):
 
     def set_workspace_section(self,section):
         """Navigation changes visibility only; inputs and calibrated state stay shared."""
+        self.global_group.setVisible(section=='project' or not self.embedded)
         self.standard_group.setVisible(section in ('standards','solve'))
         self.measurement_group.setVisible(section in ('raw','solve'))
         self.mixer_group.setVisible(section in ('standards','solve'))
@@ -306,6 +307,7 @@ class VMCCalibrationDialog(QDialog):
 
     def accept_loaded(self,cal):
         o=cal.manifest['options']
+        if hasattr(self,'vmc_session'):self.vmc_session.update(o,force=True)
         for k,s in self.spins.items():s.setValue(o[k]/(1e9 if k.endswith('_hz') and k!='frequency_tolerance_hz' else 1))
         self.points.setValue(o['points'])
         for key,c in [('frequency_conversion',self.conversion),('standard_sampling',self.sampling),('raw_axis',self.raw_axis),('mixer_definition_axis',self.definition_axis)]:c.setCurrentIndex(c.findData(o[key]))
@@ -328,6 +330,7 @@ class VMCCalibrationDialog(QDialog):
         """Load a generation run's matching definitions, measurements and axes."""
         from dataclasses import asdict
         o=asdict(saved.calibration_options());m=asdict(saved.calibration_inputs())
+        if hasattr(self,'vmc_session'):self.vmc_session.update(o,force=True)
         for k,spin in self.spins.items():
             spin.setValue(o[k]/(1e9 if k.endswith('_hz') and k!='frequency_tolerance_hz' else 1))
         self.points.setValue(o['points'])
@@ -335,8 +338,9 @@ class VMCCalibrationDialog(QDialog):
                       ('raw_axis',self.raw_axis),('mixer_definition_axis',self.definition_axis)]:
             c.setCurrentIndex(c.findData(o[key]))
         self.mut_axis.setCurrentIndex(self.mut_axis.findData(o['raw_axis']))
-        self.separate_std.setChecked(False);self.separate_sol.setChecked(False)
-        for kind,path in zip(KINDS,m['standards']['P1']):self.fields['std_P1_'+kind].setText(path)
+        self.separate_std.setChecked(m['standards']['P1']!=m['standards']['P2']);self.separate_sol.setChecked(False)
+        for port in ('P1','P2'):
+            for kind,path in zip(KINDS,m['standards'][port]):self.fields['std_'+port+'_'+kind].setText(path)
         for kind,path in zip(KINDS,m['sol']['P1_RF']):self.fields['sol_shared_'+kind].setText(path)
         self.defined_thru.setChecked(True)
         for band in ('RF','IF'):

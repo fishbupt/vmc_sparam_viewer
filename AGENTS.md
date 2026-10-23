@@ -34,8 +34,8 @@ GUI 不得复制另一套算法公式。耗时计算和文件 I/O 继续放到�
 ## 必须保留的数学约定
 
 1. 六个采集输入按 `[input_open,input_short,input_load,output_open,output_short,output_load]` 排列，均读取 S11，横轴均为 RF。生成文件的 S21 / S12 / S22 是零占位，不代表完整标准网络。
-2. GUI 输入共用 `[OPEN,SHORT,LOAD]` 三个 S1P。第一轮标准在 RF 求值，第二轮在映射 IF 求值。数值 API 兼容旧六标准路径，但不得默认使用两套不同标准。
-3. `frequency_conversion='down'`：IF=RF−LO，所有 RF 必须大于正 LO。`'up'`：IF=RF+LO，允许 LO 高于 RF。两者是非反转分支，固定 LO 下 dIF/dRF=+1。不用 abs(RF−LO) 代替，也LO−RF 使用独立 high_side 模式（v1.10.0 新增），要求 LO>全部 RF。
+2. GUI 默认共用 `[OPEN,SHORT,LOAD]` 三个 S1P；v1.11.0 支持显式选择 P2 独立标准，六路径按 P1 O/S/L、P2 O/S/L 排列。第一轮在 RF 求值，第二轮在映射 IF 求值。
+3. `frequency_conversion='down'`：IF=RF−LO，所有 RF 必须大于正 LO。`'up'`：IF=RF+LO，允许 LO 高于 RF。两者是非反转分支，固定 LO 下 dIF/dRF=+1。不用 abs(RF−LO) 代替，LO−RF 使用独立 high_side 模式（v1.10.0 新增），要求 LO>全部 RF。
 4. 仅保留 `linear_ri` / `cubic_ri`：v1.5.1 起 `linear_ri` 是历史兼容键，实际对线性幅度 `abs(Gamma)` 和 `unwrap(angle(Gamma))` 分别线性插值，再重构复数；不要退回实虚部线性，也不要改成 dB 插值。v1.5.2 起 `cubic_ri` 也是历史兼容键，实际对线性幅度和解缠绕相位分别三次样条插值，再重构复数；不要退回实虚部样条。精确节点优先；默认容差 0.001 Hz；禁止外推；拒绝容差内多节点、重复节点。三次样条边界为 not-a-knot；不要改成 natural 或偷偷裁剪标准频带。恒零 LOAD 保持零；非恒零标准含零幅度且需要任一种插值时拒绝，不给零幅度虚构相位；全部命中精确节点则保留原值。样条若产生负幅度须报错，不取绝对值、不钳位；可建议幅相线性或调整标准定义。
 5. 测量数据不插值、不自动重排 / 丢点；六个网格必须一致且严格递增。标准和测量参考阻抗须一致，不自动重归一化。病态标准、分母近零、非有限值明确报错。
 6. 一端口模型 `m=D+R*Gamma/(1-E*Gamma)`，D=EDF、R=ERF、E=ESF。线性解 `m=A+B*Gamma+E*m*Gamma`，恢复 `D=A, R=B+A*E`。ERF 不是单程 S21。
@@ -128,3 +128,13 @@ GUI 检查控件只有两种插值、方向改变后的结果失效、生成到�
 - 高边原始生成使用 simulation/conjugate_waves.py 的独立实线性波量求解，不调用反演算法。内置非理想 SOL 仅为测试用，用户和 Keysight 需加载生成的同一套定义。
 - 高边预设为 RF 10～15 / LO 20 GHz、RF 横轴、无噪声；保留模型参数。旧默认仍为上变频，不改变已有文件含义。
 - 新增测试：tests/vmc/test_high_side.py、tests/gui/gui_high_side_smoke.py。验证记录与使用条件不写入 docs/algorithms 公式页。
+
+
+## 共享 VMC 与五步流程（v1.11.0）
+
+- VMCSession 是工作台内 VMC 配置的唯一来源，保存于既有主窗口 QSettings 的 vmc_global/config。旧单页设置仅用于首次迁移，不覆盖已经恢复的全局配置。
+- 导航按“全局配置 / 生成两轮 SOL / 表征 / 生成原始 SNP / 校准求解 / 校准 MUT”组织，默认仍进入数据查看。工具菜单复用持久页面；未实现校准类型仍为空占位。
+- 全局 RF/LO/点数/阻抗/标准求值/容差/原始轴联动所有步骤。各步骤只读摘要，配置集中修改。修改全局配置时使有关结果失效，主界面快照和磁盘文件保留。后台执行期间禁止冲突编辑。
+- 生成两轮 SOL 支持共用三标准或独立六标准，六个定义和哈希完整保存。传入表征不得丢失 P2；VMC 正向生成按 P1/P2 各自物理标准生成反射，并将独立标准映射到校准输入。
+- 步骤 2 送入步骤 3 时以唯一名字保存当前表征，明确 RF 横轴；用户手动导入的外部 IF 轴文件仍需显式选择，不自动猜测。范围不足错误显示文件频段、所需频段及横轴，禁止外推。
+- 新增 tests/vmc/test_independent_kits.py 与 tests/gui/gui_vmc_shared_workflow_smoke.py。工作台 1.11.0，算法报告仍为 1.8.0；此次不改变校准公式。

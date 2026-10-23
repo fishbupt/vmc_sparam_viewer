@@ -232,7 +232,7 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
     if mixer_definition_axis not in ('rf','if'):raise ValueError('校准混频器定义横轴须为 RF 或 IF。')
     inverted=is_inverting(o.frequency_conversion)
     reader=DefinitionReader(o)
-    if standard_paths is not None and len(standard_paths)!=3:raise ValueError('须选择 OPEN / SHORT / LOAD 三个 S1P。')
+    if standard_paths is not None and len(standard_paths) not in (3,6):raise ValueError('须选择共用三个或端口独立六个 SOL S1P。')
     if standard_paths is not None and o.synthetic_sol:
         raise ValueError('内置验证 SOL 与导入 SOL 不能同时使用。')
     # The same actual standards are used at both physical ports, as requested.
@@ -243,8 +243,12 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
     if o.synthetic_sol:
         from vna_workbench.simulation.verification_kit import verification_gamma
         standards=dict(zip(('open','short','load'),verification_gamma(f)))
+    independent=standard_paths is not None and len(standard_paths)==6
+    if independent:
+        for i,k in enumerate(('open','short','load')):
+            standards['p2_'+k]=reader.sample(reader.read(standard_paths[3+i],True),'S11',f)
     gamma=list(standards.values())
-    if any(np.any(abs(gamma[i]-gamma[j])<1e-10) for i in range(3) for j in range(i)):
+    if any(np.any(abs(gamma[start+i]-gamma[start+j])<1e-10) for start in range(0,len(gamma),3) for i in range(3) for j in range(i)):
         raise ValueError('OPEN / SHORT / LOAD 定义在某些频点重合或过于接近。')
     zero=np.zeros(len(f),complex);one=np.ones(len(f),complex)
     if thru_path:
@@ -253,6 +257,18 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
     if np.any(abs(thru['S21'])<1e-12) or np.any(abs(thru['S12'])<1e-12):raise ValueError('THRU 定义传输不能为零。')
     if calibration_mixer_path:
         cd=reader.read(calibration_mixer_path);target=rf if mixer_definition_axis=='rf' else iff
+        source=cd.axes['StimulusFreq']
+        tolerance=o.frequency_tolerance_hz
+        if np.min(target)<source[0]-tolerance or np.max(target)>source[-1]+tolerance:
+            other=iff if mixer_definition_axis=='rf' else rf
+            hint=('；文件范围可覆盖另一横轴，请核对表征文件横轴选择' if
+                  np.min(other)>=source[0]-tolerance and np.max(other)<=source[-1]+tolerance else
+                  '；请使用同一份 VMC 全局配置重新表征，或导入覆盖所需频段的文件')
+            raise ValueError(f'已表征校准混频器 {calibration_mixer_path}：'
+                f'当前按 {mixer_definition_axis.upper()} 横轴读取；'
+                f'文件频段 {source[0]/1e9:.12g}～{source[-1]/1e9:.12g} GHz，'
+                f'所需频段 {np.min(target)/1e9:.12g}～{np.max(target)/1e9:.12g} GHz'
+                +hint+'。禁止外推。')
         cal_values={p:reader.sample(cd,p,target) for p in PARAMS};cal=_matrix(cal_values)
     else:cal=mixer_matrix(rf,o.calibration_mixer,if_frequency=iff if inverted else None)
     if np.any(abs(cal[:,1,0])<1e-12):raise ValueError('校准混频器 S21 不能为零。')
@@ -260,8 +276,8 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
     b1=port_box(f,o.port1,rf[0]);b2=port_box(f,o.port2 or o.port1,rf[0])
     mixed_b1=port_box(rf,o.port1,rf[0]);mixed_b2=port_box(iff,o.port2 or o.port1,rf[0])
     clean={}
-    for k in standards:
-        c=np.zeros((len(f),2,2),complex);c[:,0,0]=standards[k];c[:,1,1]=standards[k]
+    for k in ('open','short','load'):
+        c=np.zeros((len(f),2,2),complex);c[:,0,0]=standards[k];c[:,1,1]=standards['p2_'+k] if independent else standards[k]
         clean[k+'_raw.s2p']=forward_wave(c,b1,b2)
     clean['thru_raw.s2p']=forward_wave(_matrix(thru),b1,b2)
     mixed_forward=high_side_measurement if inverted else forward_wave
@@ -321,7 +337,7 @@ def simulate_vmc(options=VMCSimulationOptions(), standard_paths=None, thru_path=
         if standard_paths is None and not o.synthetic_sol:
             warnings.append('Ideal +1/-1/0 SOL cannot detect missing standard conjugation; use nonideal complex standards for characterization validation.')
     manifest={'version':VERSION,'spectral_inversion':inverted,'phase_convention':phase_convention(o.frequency_conversion),'options':asdict(o),'if_relation':frequency_relation(o.frequency_conversion),
-              'sol_definition':('synthetic nonideal verification SOL; NOT a physical Keysight kit' if o.synthetic_sol else 'ideal +1/-1/0, zero offset' if standard_paths is None else 'imported actual shared S1P'),
+              'independent_port_standards':independent,'sol_definition':('synthetic nonideal verification SOL; NOT a physical Keysight kit' if o.synthetic_sol else 'ideal +1/-1/0, zero offset' if standard_paths is None else 'imported actual shared S1P'),
               'thru_definition':'ideal Flush: S11=S22=0, S21=S12=1, zero delay/loss' if not thru_path else 'imported full S2P',
               'calibration_mixer_definition':'RF normalized output; '+('imported '+mixer_definition_axis if calibration_mixer_path else 'analytical reciprocal model'),
               'model':('Independent real-linear conjugate-wave solve; physical receivers M=D+T*b' if inverted else 'a=T+E*b; b=C*a; M=D+T*b, solved independently for both port excitations'),

@@ -49,7 +49,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert window.type_selector.currentData() == 'solt'
     assert window.workspace.stack.currentIndex() == 0
     assert window.workspace.calibration is None
-    for page in (1, 2, 3, 4, 5):
+    for page in (1, 2, 3, 4, 5, 6):
         window.workspace.show_page(page)
         assert window.workspace.stack.currentWidget() is window.workspace.placeholder
         assert window.workspace.actions.count() == 0
@@ -64,8 +64,8 @@ with tempfile.TemporaryDirectory() as tmp:
         assert window.type_actions[key].isChecked()
     window.choose_calibration_type('vmc')
     assert window.workspace.calibration is not None
-    window.workspace.show_page(5)
-    assert window.workspace.heading.text() == '校准 MUT'
+    window.workspace.show_page(6)
+    assert window.workspace.heading.text() == '5. 校准 MUT'
     window.workspace.show_page(0)
     f = np.array([10e9, 11e9, 12e9])
     for n, value in enumerate((.1, .2, .3)):
@@ -84,7 +84,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert all(len(ax.lines) == 1 for ax in window.axes)
     window.set_y_limits('S21', (-50, 0))
     np.testing.assert_allclose(window.axes[2].get_ylim(), [-50, 0])
-    window.workspace.show_page(6)
+    window.workspace.show_page(7)
     comparison = window.workspace.comparison
     assert comparison.pairs
     comparison.compute()
@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert window.workspace.stack.currentWidget() is window.workspace.placeholder
     window.choose_calibration_type('vmc')
     assert window.workspace.calibration is cal and cal.spins['lo_hz'].value() == 19
-    for page in (2, 3, 4, 5):
+    for page in (2, 3, 4, 5, 6):
         window.workspace.show_page(page)
         assert window.workspace.calibration is cal
         assert cal.spins['lo_hz'].value() == 19
@@ -107,7 +107,7 @@ with tempfile.TemporaryDirectory() as tmp:
     window.simulate_vmc()
     sim = window.workspace.simulation
     window.workspace.clicked_navigation(window.workspace.navigation.currentItem())
-    assert window.workspace.stack.currentWidget() is cal
+    assert window.workspace.stack.currentWidget() is sim
     window.simulate_vmc()
     assert window.workspace.simulation is sim
     sim.directory.setText(tmp)
@@ -142,7 +142,7 @@ with tempfile.TemporaryDirectory() as tmp:
     assert any(data.name == str(queued) for data in window.datasets)
     package = cal.calibration
     assert package is not None
-    window.workspace.show_page(5)
+    window.workspace.show_page(6)
     assert cal.calibration is package
     cal.compute_mut()
     wait(cal)
@@ -155,9 +155,9 @@ with tempfile.TemporaryDirectory() as tmp:
     assert window.log.isVisible()
     window.log_toggle.setChecked(False)
     # Rebuild statistics after imported results change the dataset list.
-    window.workspace.show_page(6)
+    window.workspace.show_page(7)
     assert window.workspace.comparison is comparison
-    for page in (0, 1, 2, 3, 4, 5, 6):
+    for page in range(8):
         window.workspace.show_page(page)
         window.resize(1000, 700)
         app.processEvents()
@@ -178,7 +178,7 @@ with tempfile.TemporaryDirectory() as tmp:
             app.processEvents()
             window.canvas.draw()
             window.grab().save(str(target / f'workbench_{size[0]}.png'))
-        window.workspace.show_page(4)
+        window.workspace.show_page(5)
         window.resize(1420, 900)
         app.processEvents()
         window.grab().save(str(target / 'workbench_solver.png'))
